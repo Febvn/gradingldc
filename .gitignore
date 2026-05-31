@@ -1,0 +1,57 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+ENV/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Models
+models/*.h5
+models/*.keras
+
+# Data
+data/
+*.jpg
+*.jpeg
+*.png
+!data/.gitkeep
+
+# Screenshots
+screenshot_*.jpg
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
