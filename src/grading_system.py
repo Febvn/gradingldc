@@ -9,6 +9,7 @@ Sistem grading kopi realtime - Main system
 import cv2
 import numpy as np
 import time
+import tensorflow as tf
 from collections import deque
 from camera_capture import CameraCapture
 from preprocessing import ImagePreprocessor
@@ -169,6 +170,9 @@ class CoffeeGradingSystem:
         # UI controls
         self.show_gradcam = False
         
+        # Latency statistics
+        self.last_latency = {'preproc': 0.0, 'inference': 0.0, 'total': 0.0}
+        
         # Statistics — dynamically built from labels
         self.stats = {label: 0 for label in grade_labels}
         self.stats['Uncertain'] = 0
@@ -227,6 +231,8 @@ class CoffeeGradingSystem:
         Returns:
             tuple: (annotated_frame, results)
         """
+        t_start = time.time()
+        
         # Apply Auto White Balance if enabled
         if self.awb_enabled:
             frame_processed = self.preprocessor.apply_auto_white_balance(frame)
@@ -246,66 +252,131 @@ class CoffeeGradingSystem:
         # Apply NMS untuk menghapus deteksi duplikat
         detected_beans = self.preprocessor.apply_nms(detected_beans, iou_threshold=0.3)
         
+        t_preproc = (time.time() - t_start) * 1000.0  # ms
+        
+        t_inf_start = time.time()
         results = []
         annotated_frame = frame_processed.copy()
         active_keys = set()
         
-        for bean in detected_beans:
-            bbox = bean['bbox']
-            contour = bean['contour']
+        # Batch inference if there are beans and TTA is disabled
+        if len(detected_beans) > 0 and not use_tta:
+            rois = []
+            valid_beans = []
+            for bean in detected_beans:
+                roi = self.preprocessor.extract_bean_roi(frame_processed, bean['bbox'])
+                if roi is not None:
+                    normalized_roi = self.preprocessor.normalize_image(roi)
+                    rois.append(normalized_roi)
+                    valid_beans.append((bean, roi, normalized_roi))
             
-            # Extract ROI
-            roi = self.preprocessor.extract_bean_roi(frame_processed, bbox)
-            
-            if roi is not None:
-                # Normalize untuk model
-                normalized_roi = self.preprocessor.normalize_image(roi)
+            if len(rois) > 0:
+                rois_array = np.array(rois)
+                batch_predictions = self.model.predict_batch(rois_array)
                 
-                # Predict grade
-                if use_tta:
-                    grade, confidence, probs = self.model.predict_with_tta(normalized_roi)
-                else:
-                    grade, confidence, probs = self.model.predict(normalized_roi)
+                for (bean, roi, normalized_roi), (grade, confidence, probs) in zip(valid_beans, batch_predictions):
+                    bbox = bean['bbox']
+                    contour = bean['contour']
+                    
+                    # Apply temporal smoothing
+                    smoothed_probs = self.smoother.smooth(bbox, probs)
+                    predicted_class = np.argmax(smoothed_probs)
+                    smoothed_confidence = float(smoothed_probs[predicted_class])
+                    
+                    # Track active keys
+                    smoother_key = self.smoother._get_key(bbox)
+                    active_keys.add(smoother_key)
+                    
+                    # Apply confidence threshold
+                    if smoothed_confidence < self.confidence_threshold:
+                        final_grade = 'Uncertain'
+                    else:
+                        final_grade = self.model.grade_labels[predicted_class]
+                    
+                    # Store result
+                    results.append({
+                        'bbox': bbox,
+                        'grade': final_grade,
+                        'confidence': smoothed_confidence,
+                        'raw_confidence': confidence,
+                        'probabilities': smoothed_probs,
+                        'raw_probabilities': probs
+                    })
+                    
+                    # Apply Grad-CAM overlay if enabled and toggled
+                    if self.show_gradcam and self.gradcam_enabled:
+                        try:
+                            heatmap, _ = self.model.get_gradcam_heatmap(normalized_roi, pred_index=predicted_class)
+                            gradcam_roi = self.model.overlay_gradcam(roi, heatmap, alpha=0.4)
+                            x, y, w, h = bbox
+                            gradcam_roi_resized = cv2.resize(gradcam_roi, (w, h))
+                            annotated_frame[y:y+h, x:x+w] = gradcam_roi_resized
+                        except Exception as e:
+                            pass
+                    
+                    # Draw detection
+                    self._draw_detection(annotated_frame, bbox, contour,
+                                        final_grade, smoothed_confidence, smoothed_probs)
+        else:
+            # Fallback to sequential inference if TTA is enabled (TTA logic is not batched yet)
+            for bean in detected_beans:
+                bbox = bean['bbox']
+                contour = bean['contour']
                 
-                # Apply temporal smoothing
-                smoothed_probs = self.smoother.smooth(bbox, probs)
-                predicted_class = np.argmax(smoothed_probs)
-                smoothed_confidence = float(smoothed_probs[predicted_class])
+                # Extract ROI
+                roi = self.preprocessor.extract_bean_roi(frame_processed, bbox)
                 
-                # Track active keys
-                smoother_key = self.smoother._get_key(bbox)
-                active_keys.add(smoother_key)
-                
-                # Apply confidence threshold
-                if smoothed_confidence < self.confidence_threshold:
-                    final_grade = 'Uncertain'
-                else:
-                    final_grade = self.model.grade_labels[predicted_class]
-                
-                # Store result
-                results.append({
-                    'bbox': bbox,
-                    'grade': final_grade,
-                    'confidence': smoothed_confidence,
-                    'raw_confidence': confidence,
-                    'probabilities': smoothed_probs,
-                    'raw_probabilities': probs
-                })
-                
-                # Apply Grad-CAM overlay if enabled and toggled
-                if self.show_gradcam and self.gradcam_enabled:
-                    try:
-                        heatmap, _ = self.model.get_gradcam_heatmap(normalized_roi, pred_index=predicted_class)
-                        gradcam_roi = self.model.overlay_gradcam(roi, heatmap, alpha=0.4)
-                        x, y, w, h = bbox
-                        gradcam_roi_resized = cv2.resize(gradcam_roi, (w, h))
-                        annotated_frame[y:y+h, x:x+w] = gradcam_roi_resized
-                    except Exception as e:
-                        pass
-                
-                # Draw detection
-                self._draw_detection(annotated_frame, bbox, contour,
-                                    final_grade, smoothed_confidence, smoothed_probs)
+                if roi is not None:
+                    # Normalize untuk model
+                    normalized_roi = self.preprocessor.normalize_image(roi)
+                    
+                    # Predict grade
+                    if use_tta:
+                        grade, confidence, probs = self.model.predict_with_tta(normalized_roi)
+                    else:
+                        grade, confidence, probs = self.model.predict(normalized_roi)
+                    
+                    # Apply temporal smoothing
+                    smoothed_probs = self.smoother.smooth(bbox, probs)
+                    predicted_class = np.argmax(smoothed_probs)
+                    smoothed_confidence = float(smoothed_probs[predicted_class])
+                    
+                    # Track active keys
+                    smoother_key = self.smoother._get_key(bbox)
+                    active_keys.add(smoother_key)
+                    
+                    # Apply confidence threshold
+                    if smoothed_confidence < self.confidence_threshold:
+                        final_grade = 'Uncertain'
+                    else:
+                        final_grade = self.model.grade_labels[predicted_class]
+                    
+                    # Store result
+                    results.append({
+                        'bbox': bbox,
+                        'grade': final_grade,
+                        'confidence': smoothed_confidence,
+                        'raw_confidence': confidence,
+                        'probabilities': smoothed_probs,
+                        'raw_probabilities': probs
+                    })
+                    
+                    # Apply Grad-CAM overlay if enabled and toggled
+                    if self.show_gradcam and self.gradcam_enabled:
+                        try:
+                            heatmap, _ = self.model.get_gradcam_heatmap(normalized_roi, pred_index=predicted_class)
+                            gradcam_roi = self.model.overlay_gradcam(roi, heatmap, alpha=0.4)
+                            x, y, w, h = bbox
+                            gradcam_roi_resized = cv2.resize(gradcam_roi, (w, h))
+                            annotated_frame[y:y+h, x:x+w] = gradcam_roi_resized
+                        except Exception as e:
+                            pass
+                    
+                    # Draw detection
+                    self._draw_detection(annotated_frame, bbox, contour,
+                                        final_grade, smoothed_confidence, smoothed_probs)
+        
+        t_inf = (time.time() - t_inf_start) * 1000.0  # ms
         
         # Cleanup old tracking entries
         self.smoother.cleanup(active_keys)
@@ -320,6 +391,14 @@ class CoffeeGradingSystem:
             annotated_frame = cv2.addWeighted(annotated_frame, 0.7, banner_overlay, 0.3, 0)
             cv2.putText(annotated_frame, warning_text, (25, h - 58),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 2)
+            
+        t_total = (time.time() - t_start) * 1000.0  # ms
+        
+        self.last_latency = {
+            'preproc': t_preproc,
+            'inference': t_inf,
+            'total': t_total
+        }
         
         return annotated_frame, results
     
@@ -461,50 +540,75 @@ class CoffeeGradingSystem:
             cv2.putText(frame, f"Uncertain: {uncertain}", (20, y_offset),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.4, (128, 128, 128), 1)
         
-        # === FPS Counter (kanan atas) ===
+        # === Right Status & Performance Panel ===
+        panel_w = 210
+        panel_x1 = w - panel_w - 10
+        panel_x2 = w - 10
+        panel_h = 240
+        
+        overlay2 = frame.copy()
+        cv2.rectangle(overlay2, (panel_x1, 10), (panel_x2, panel_h), (0, 0, 0), -1)
+        frame = cv2.addWeighted(frame, 0.7, overlay2, 0.3, 0)
+        
+        # Draw FPS
         fps = self.fps_counter.get_fps()
         fps_text = f"FPS: {fps:.1f}"
         fps_color = (0, 255, 0) if fps >= 20 else (0, 200, 255) if fps >= 10 else (0, 0, 255)
-        
-        fps_size, _ = cv2.getTextSize(fps_text, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
-        fps_x = w - fps_size[0] - 20
-        
-        # FPS background
-        overlay2 = frame.copy()
-        cv2.rectangle(overlay2, (fps_x - 10, 10), (w - 10, 45), (0, 0, 0), -1)
-        frame = cv2.addWeighted(frame, 0.7, overlay2, 0.3, 0)
-        
-        cv2.putText(frame, fps_text, (fps_x, 35),
+        cv2.putText(frame, fps_text, (panel_x1 + 15, 35),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, fps_color, 2)
+                    
+        # Draw Latency
+        lat_text = f"Latency: {self.last_latency['total']:.1f} ms"
+        cv2.putText(frame, lat_text, (panel_x1 + 15, 60),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1)
         
-        # === Confidence threshold info (kanan atas bawah FPS) ===
-        thresh_text = f"Conf Threshold: {self.confidence_threshold:.0%}"
-        cv2.putText(frame, thresh_text, (fps_x - 30, 60),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.4, (200, 200, 200), 1)
+        lat_details = f"CV: {self.last_latency['preproc']:.1f}ms | DL: {self.last_latency['inference']:.1f}ms"
+        cv2.putText(frame, lat_details, (panel_x1 + 15, 80),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.35, (180, 180, 180), 1)
+                    
+        # Separator line
+        cv2.line(frame, (panel_x1 + 10, 95), (panel_x2 - 10, 95), (100, 100, 100), 1)
         
-        # === System Status Info (kanan atas di bawah threshold) ===
-        status_y = 80
-        status_font_scale = 0.35
+        # System Settings Status
+        status_y = 115
+        status_font_scale = 0.38
         
+        thresh_text = f"Conf Thresh: {self.confidence_threshold:.0%}"
+        cv2.putText(frame, thresh_text, (panel_x1 + 15, status_y),
+                    cv2.FONT_HERSHEY_SIMPLEX, status_font_scale, (200, 200, 200), 1)
+                    
         # AWB status
+        status_y += 20
         awb_text = f"AWB: {'ON' if self.awb_enabled else 'OFF'}"
         awb_color = (0, 255, 0) if self.awb_enabled else (150, 150, 150)
-        cv2.putText(frame, awb_text, (fps_x - 30, status_y),
+        cv2.putText(frame, awb_text, (panel_x1 + 15, status_y),
                     cv2.FONT_HERSHEY_SIMPLEX, status_font_scale, awb_color, 1)
         
         # Quality check status
-        status_y += 15
+        status_y += 20
         qc_text = f"QC: {'ON' if self.quality_check_enabled else 'OFF'}"
         qc_color = (0, 255, 0) if self.quality_check_enabled else (150, 150, 150)
-        cv2.putText(frame, qc_text, (fps_x - 30, status_y),
+        cv2.putText(frame, qc_text, (panel_x1 + 15, status_y),
                     cv2.FONT_HERSHEY_SIMPLEX, status_font_scale, qc_color, 1)
                     
         # Grad-CAM status
-        status_y += 15
+        status_y += 20
         gc_text = f"Grad-CAM: {'ON' if self.show_gradcam else 'OFF'}"
         gc_color = (0, 255, 0) if self.show_gradcam else (150, 150, 150)
-        cv2.putText(frame, gc_text, (fps_x - 30, status_y),
+        cv2.putText(frame, gc_text, (panel_x1 + 15, status_y),
                     cv2.FONT_HERSHEY_SIMPLEX, status_font_scale, gc_color, 1)
+                    
+        # GPU Acceleration check (Direct from TensorFlow device list)
+        status_y += 20
+        try:
+            gpus = tf.config.list_physical_devices('GPU')
+            gpu_active = len(gpus) > 0
+        except Exception:
+            gpu_active = False
+        gpu_text = f"GPU Accel: {'ACTIVE' if gpu_active else 'N/A'}"
+        gpu_color = (0, 255, 255) if gpu_active else (150, 150, 150)
+        cv2.putText(frame, gpu_text, (panel_x1 + 15, status_y),
+                    cv2.FONT_HERSHEY_SIMPLEX, status_font_scale, gpu_color, 1)
         
         # === Instructions (bawah) ===
         overlay3 = frame.copy()
