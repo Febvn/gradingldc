@@ -2,6 +2,9 @@
 
 Sistem klasifikasi kualitas biji kopi secara realtime menggunakan computer vision dan machine learning.
 
+> 📄 **Dokumentasi PoC lengkap** (Smart Grading SNI, dashboard web, live scan kamera/mobile,
+> dan evaluasi PoC YOLO object detection): lihat [docs/DOKUMENTASI_POC.md](docs/DOKUMENTASI_POC.md).
+
 ## Fitur
 - Deteksi dan klasifikasi biji kopi dari camera realtime
 - Grading berdasarkan warna, ukuran, dan cacat visual

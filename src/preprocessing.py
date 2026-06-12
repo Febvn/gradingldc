@@ -227,20 +227,27 @@ class ImagePreprocessor:
     
     def normalize_image(self, image):
         """
-        Normalize image untuk input ke model ML
-        Menggunakan preprocessing yang sesuai dengan EfficientNet
-        (range [-1, 1])
-        
+        Normalize image untuk input ke model ML sesuai backbone yang dipakai.
+
+        PENTING (perbaikan bug): keras.applications.EfficientNet sudah memuat
+        layer Rescaling/Normalization DI DALAM model, sehingga mengharapkan
+        input pada rentang [0, 255]. Memberi input [-1, 1] membuat fitur
+        backbone (frozen, pretrained ImageNet) nyaris konstan dan model gagal
+        belajar. MobileNetV2 sebaliknya butuh [-1, 1].
+
         Args:
             image: Input image (uint8, 0-255)
-            
+
         Returns:
-            numpy.ndarray: Normalized image
+            numpy.ndarray: Normalized image (float32) sesuai backbone
         """
-        # EfficientNet / MobileNetV2 preprocessing: scale ke [-1, 1]
-        normalized = image.astype(np.float32)
-        normalized = (normalized / 127.5) - 1.0
-        return normalized
+        backbone = Config.BACKBONE if Config is not None else 'efficientnet'
+        img = image.astype(np.float32)
+        if backbone == 'efficientnet':
+            # EfficientNet: biarkan pada [0, 255] (normalisasi internal model).
+            return img
+        # MobileNetV2 / custom: skala ke [-1, 1].
+        return (img / 127.5) - 1.0
     
     def normalize_image_simple(self, image):
         """

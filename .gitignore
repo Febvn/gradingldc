@@ -46,6 +46,20 @@ data/
 *.png
 !data/.gitkeep
 
+# PoC: aset yang sengaja di-commit agar demo dapat ditampilkan
+!webapp/sample_images/
+!webapp/sample_images/*.jpg
+!docs/screenshots/
+!docs/screenshots/*.png
+
+# PoC: artefak runtime (regenerable, jangan di-commit)
+data_store/*.db
+results/
+models/*.json
+
+# PoC: sertifikat TLS self-signed — JANGAN commit private key
+webapp/.certs/
+
 # Screenshots
 screenshot_*.jpg
 
@@ -55,3 +69,9 @@ screenshot_*.jpg
 # OS
 .DS_Store
 Thumbs.db
+
+# YOLO PoC: dataset sintetis & artefak training (regenerable, besar)
+yolo_poc/dataset_clean/
+yolo_poc/dataset_hard/
+yolo_poc/runs/
+*.pt

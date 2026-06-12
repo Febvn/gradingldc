@@ -1,0 +1,228 @@
+{% extends "base.html" %}
+{% block title %}Live Scan Kamera{% endblock %}
+{% block content %}
+
+<div class="page-head">
+  <h1>Live <span class="accent">Scan Kamera</span></h1>
+  <p>Arahkan kamera ke biji kopi — sistem mendeteksi & menilai mutu (SNI) secara
+     langsung di browser. Berfungsi di <b>HP</b> (kamera belakang) maupun
+     <b>webcam</b> laptop.</p>
+</div>
+
+<div id="secwarn" class="banner-warn" style="display:none">
+  ⚠️ Browser hanya mengizinkan akses kamera pada <b>HTTPS</b> atau <b>localhost</b>.
+  Untuk memakai kamera HP via jaringan lokal, jalankan server dengan
+  <code>python webapp/app.py --https</code> lalu buka alamat <code>https://&lt;IP-laptop&gt;:5000/live</code> dari HP.
+</div>
+
+<div class="live-grid">
+  <!-- Kamera -->
+  <div class="card live-cam">
+    <div class="cam-stage" id="stage">
+      <video id="video" playsinline autoplay muted></video>
+      <canvas id="overlay"></canvas>
+      <div id="camhint" class="cam-hint">Tekan “Mulai Kamera” untuk memindai</div>
+    </div>
+
+    <div class="live-controls">
+      <button id="btnStart" class="btn">▶ Mulai Kamera</button>
+      <button id="btnStop" class="btn ghost" disabled>■ Stop</button>
+      <select id="camSelect" class="select" title="Pilih kamera"></select>
+      <label class="switch">
+        <input type="checkbox" id="liveToggle" checked> Mode live (kontinu)
+      </label>
+      <button id="btnScan" class="btn ghost" disabled>📸 Scan sekali</button>
+      <button id="btnSave" class="btn ghost" disabled>💾 Simpan ke Dashboard</button>
+    </div>
+    <div class="muted" id="status" style="font-size:.8rem;margin-top:8px;"></div>
+  </div>
+
+  <!-- Hasil -->
+  <div class="live-result">
+    <div id="gradeHero" class="grade-hero" style="background: linear-gradient(180deg,#14191f,transparent);">
+      <div class="code" id="gradeCode" style="color:var(--muted)">—</div>
+      <div class="label" id="gradeLabel">menunggu pemindaian…</div>
+      <div class="dv">Nilai cacat / 300 g: <b id="defVal">–</b></div>
+      <span class="pill no" id="premiumPill" style="display:none">—</span>
+    </div>
+
+    <div class="card" style="margin-top:14px">
+      <div class="section-title" style="font-size:.95rem"><span class="dot"></span>Ringkasan Live</div>
+      <table>
+        <tr><td>Biji terdeteksi</td><td><b id="beanCount">0</b></td></tr>
+        <tr><td>Biji cacat</td><td id="defectCount">0 (0%)</td></tr>
+        <tr><td>Model</td><td id="modelStatus">—</td></tr>
+        <tr><td>Latency</td><td id="latency">– ms</td></tr>
+      </table>
+      <div id="compBars" style="margin-top:12px"></div>
+    </div>
+    <p class="muted" style="font-size:.78rem;margin-top:10px">
+      Tip: latar polos/kontras & pencahayaan merata meningkatkan akurasi deteksi.
+    </p>
+  </div>
+</div>
+
+<script>
+const CLASS_COLORS = {{ class_colors|tojson }};
+const GRADE_COLORS = {{ grade_colors|tojson }};
+const $ = (id) => document.getElementById(id);
+
+let stream = null, running = false, busy = false, lastResult = null;
+const video = $('video'), overlay = $('overlay'), octx = overlay.getContext('2d');
+const work = document.createElement('canvas');           // canvas kerja (offscreen)
+const wctx = work.getContext('2d');
+const MAX_W = 800;                                        // lebar frame yang dikirim
+
+if (!window.isSecureContext && location.hostname !== 'localhost'
+    && location.hostname !== '127.0.0.1') {
+  $('secwarn').style.display = 'block';
+}
+
+async function listCameras() {
+  try {
+    const devs = await navigator.mediaDevices.enumerateDevices();
+    const cams = devs.filter(d => d.kind === 'videoinput');
+    const sel = $('camSelect'); sel.innerHTML = '';
+    cams.forEach((c, i) => {
+      const o = document.createElement('option');
+      o.value = c.deviceId; o.textContent = c.label || ('Kamera ' + (i + 1));
+      sel.appendChild(o);
+    });
+    if (!cams.length) { const o=document.createElement('option'); o.textContent='(tidak ada kamera)'; sel.appendChild(o);}
+  } catch (e) { setStatus('Gagal enumerasi kamera: ' + e.message); }
+}
+
+async function startCamera() {
+  stopCamera();
+  const sel = $('camSelect');
+  const deviceId = sel.value;
+  const constraints = {
+    audio: false,
+    video: deviceId ? { deviceId: { exact: deviceId } }
+                    : { facingMode: { ideal: 'environment' } }   // kamera belakang di HP
+  };
+  try {
+    stream = await navigator.mediaDevices.getUserMedia(constraints);
+    video.srcObject = stream;
+    await video.play();
+    await listCameras();                 // label kamera baru tersedia setelah izin
+    running = true;
+    $('btnStart').disabled = true; $('btnStop').disabled = false;
+    $('btnScan').disabled = false; $('btnSave').disabled = false;
+    $('camhint').style.display = 'none';
+    setStatus('Kamera aktif (' + (video.videoWidth) + '×' + (video.videoHeight) + ')');
+    if ($('liveToggle').checked) loop();
+  } catch (e) {
+    setStatus('Tidak bisa membuka kamera: ' + e.name + ' — ' + e.message);
+    $('secwarn').style.display = 'block';
+  }
+}
+
+function stopCamera() {
+  running = false;
+  if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+  $('btnStart').disabled = false; $('btnStop').disabled = true;
+  $('btnScan').disabled = true; $('btnSave').disabled = true;
+}
+
+function frameBlob() {
+  const vw = video.videoWidth, vh = video.videoHeight;
+  if (!vw) return null;
+  const scale = Math.min(1, MAX_W / vw);
+  work.width = Math.round(vw * scale); work.height = Math.round(vh * scale);
+  wctx.drawImage(video, 0, 0, work.width, work.height);
+  return new Promise(res => work.toBlob(res, 'image/jpeg', 0.8));
+}
+
+async function scanOnce(record=false) {
+  if (busy || !running) return;
+  busy = true;
+  const blob = await frameBlob();
+  if (!blob) { busy = false; return; }
+  const fd = new FormData(); fd.append('image', blob, 'frame.jpg');
+  const t0 = performance.now();
+  try {
+    const url = '/api/grade' + (record ? '?record=1' : '');
+    const r = await fetch(url, { method: 'POST', body: fd });
+    const data = await r.json();
+    data._rtt = Math.round(performance.now() - t0);
+    lastResult = data;
+    render(data);
+  } catch (e) { setStatus('Error grading: ' + e.message); }
+  busy = false;
+}
+
+async function loop() {
+  while (running && $('liveToggle').checked) {
+    await scanOnce(false);
+    await new Promise(r => setTimeout(r, 120));   // jeda kecil antar frame
+  }
+}
+
+function render(d) {
+  // Overlay kotak biji (koordinat = ukuran gambar yang dianalisis).
+  const [iw, ih] = d.image_size || [work.width, work.height];
+  overlay.width = iw; overlay.height = ih;
+  octx.clearRect(0, 0, iw, ih);
+  octx.lineWidth = Math.max(2, iw / 320);
+  octx.font = Math.round(iw / 45) + 'px sans-serif';
+  (d.beans || []).forEach(b => {
+    const [x, y, w, h] = b.bbox;
+    const col = CLASS_COLORS[b.label] || '#fff';
+    octx.strokeStyle = col; octx.strokeRect(x, y, w, h);
+    if (b.label !== 'Uncertain') {
+      octx.fillStyle = col;
+      octx.fillText(b.label, x, Math.max(12, y - 4));
+    }
+  });
+
+  const g = d.grade || {};
+  const gcol = GRADE_COLORS[g.grade_code] || '#9ca3af';
+  $('gradeCode').textContent = g.grade_code || '—';
+  $('gradeCode').style.color = gcol;
+  $('gradeHero').style.background = 'linear-gradient(180deg,' + gcol + '22, transparent)';
+  $('gradeLabel').textContent = (g.grade_label || '') + ' · ' + (g.total_beans || 0) + ' biji';
+  $('defVal').textContent = (g.defect_value_per_300g ?? '–');
+  $('defVal').style.color = gcol;
+  const pill = $('premiumPill');
+  pill.style.display = 'inline-block';
+  if (g.export_premium_eligible) { pill.className = 'pill ok'; pill.textContent = 'Layak Ekspor Premium'; }
+  else { pill.className = 'pill no'; pill.textContent = 'Komersial / Re-sortasi'; }
+
+  $('beanCount').textContent = g.total_beans || 0;
+  $('defectCount').textContent = (g.defect_beans || 0) + ' (' + (g.defect_rate_pct || 0) + '%)';
+  $('modelStatus').textContent = d.model_status || '—';
+  $('latency').textContent = (d.timing_ms ? d.timing_ms.total : '–') + ' ms · RTT ' + (d._rtt||0) + ' ms';
+
+  // Bar komposisi.
+  const counts = d.counts || {}; const total = Object.values(counts).reduce((a,b)=>a+b,0) || 1;
+  let html = '';
+  Object.entries(counts).forEach(([lab, c]) => {
+    if (c <= 0) return;
+    const pct = (c / total * 100).toFixed(1);
+    const col = CLASS_COLORS[lab] || '#888';
+    html += `<div class="bar-row"><div class="top"><span>${lab}</span><span>${c} (${pct}%)</span></div>
+      <div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${col}"></div></div></div>`;
+  });
+  $('compBars').innerHTML = html;
+}
+
+function setStatus(m){ $('status').textContent = m; }
+
+$('btnStart').onclick = startCamera;
+$('btnStop').onclick = stopCamera;
+$('btnScan').onclick = () => scanOnce(false);
+$('btnSave').onclick = async () => { await scanOnce(true); setStatus('Hasil disimpan ke Dashboard ✓'); };
+$('liveToggle').onchange = () => { if (running && $('liveToggle').checked && !busy) loop(); };
+$('camSelect').onchange = () => { if (running) startCamera(); };
+
+// Pra-isi daftar kamera (label muncul setelah izin diberikan).
+navigator.mediaDevices && listCameras();
+window.addEventListener('beforeunload', stopCamera);
+
+// Mode kiosk/demo: ?autostart=1 langsung membuka kamera.
+if (new URLSearchParams(location.search).get('autostart') === '1') {
+  window.addEventListener('load', () => setTimeout(startCamera, 400));
+}
+</script>
+{% endblock %}

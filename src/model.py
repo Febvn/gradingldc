@@ -7,6 +7,7 @@ Modul untuk model machine learning klasifikasi kopi
 """
 import numpy as np
 import tensorflow as tf
+import cv2
 from tensorflow import keras
 from tensorflow.keras import layers, regularizers
 import os
@@ -847,9 +848,8 @@ class CoffeeGradingModel:
         
         # Apply jet colormap
         jet = cv2.applyColorMap(heatmap_im, cv2.COLORMAP_JET)
-        
+
         # Resize colormap to original image size
-        import cv2
         jet = cv2.resize(jet, (image.shape[1], image.shape[0]))
         
         # Superimpose

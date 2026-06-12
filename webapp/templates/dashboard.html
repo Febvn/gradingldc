@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block title %}Dashboard Analitik{% endblock %}
+{% block content %}
+
+<div class="page-head">
+  <h1>Dashboard <span class="accent">Analitik Operasional</span></h1>
+  <p>Pilar kedua proposal: setiap sesi grading dicatat lalu diolah menjadi KPI &amp;
+     tren operasional untuk mendukung keputusan berbasis data (data-driven) di lini
+     kontrol kualitas kopi.</p>
+</div>
+
+{% if overview.empty %}
+  <div class="card">Belum ada data. <form action="{{ url_for('reseed') }}" method="post" style="display:inline">
+    <button class="btn" type="submit">Buat data simulasi</button></form></div>
+{% else %}
+
+<!-- KPI -->
+<div class="grid cols-4 section">
+  <div class="card kpi"><div class="label">Total Sesi Grading</div>
+    <div class="value">{{ overview.total_sessions }}</div>
+    <div class="sub">{{ overview.date_range[0] }} → {{ overview.date_range[1] }}</div></div>
+  <div class="card kpi"><div class="label">Biji Dianalisis</div>
+    <div class="value">{{ "{:,}".format(overview.total_beans) }}</div>
+    <div class="sub">akumulatif seluruh sesi</div></div>
+  <div class="card kpi"><div class="label">Yield Mutu Premium</div>
+    <div class="value" style="color:var(--green)">{{ overview.premium_yield_pct }}%</div>
+    <div class="sub">{{ overview.premium_sessions }} sesi Mutu 1–2</div></div>
+  <div class="card kpi"><div class="label">Rata-rata Nilai Cacat</div>
+    <div class="value" style="color:var(--amber-light)">{{ overview.avg_defect_value }}</div>
+    <div class="sub">per 300 g · cacat {{ overview.avg_defect_rate }}%</div></div>
+</div>
+
+<!-- Trend -->
+<div class="grid cols-2 section">
+  <div class="card"><div class="section-title"><span class="dot"></span>Tren Nilai Cacat Harian</div>
+    <div class="chart-wrap">{{ chart_defect_value|safe }}</div></div>
+  <div class="card"><div class="section-title"><span class="dot"></span>Tren Yield Premium Harian</div>
+    <div class="chart-wrap">{{ chart_premium|safe }}</div></div>
+</div>
+
+<!-- Distribusi mutu + Pareto -->
+<div class="section grid cols-2">
+  <div class="card">
+    <div class="section-title"><span class="dot"></span>Distribusi Mutu</div>
+    <div class="split">
+      <div style="text-align:center">{{ chart_donut|safe }}</div>
+      <div>
+        {% set tot = overview.total_sessions %}
+        {% for g, c in overview.grade_distribution.items() %}
+        <div class="bar-row">
+          <div class="top"><span>{{ g }}</span><span>{{ c }} ({{ (c/tot*100)|round(1) }}%)</span></div>
+          <div class="bar-track"><div class="bar-fill"
+            style="width: {{ (c/tot*100) }}%; background: {{ grade_colors.get(g,'#888') }}"></div></div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="section-title"><span class="dot"></span>Pareto Jenis Cacat</div>
+    <div class="chart-wrap">{{ chart_pareto|safe }}</div>
+    <p class="muted" style="font-size:.8rem;margin-top:8px;">Bar = jumlah biji per jenis cacat;
+       garis hijau = persentase kumulatif. Fokuskan perbaikan proses pada cacat dominan (kiri).</p>
+  </div>
+</div>
+
+<!-- Per lini + recent -->
+<div class="section grid cols-2">
+  <div class="card">
+    <div class="section-title"><span class="dot"></span>Perbandingan Lini Produksi</div>
+    <table>
+      <thead><tr><th>Lini</th><th>Sesi</th><th>Biji</th><th>Cacat %</th><th>Premium %</th></tr></thead>
+      <tbody>
+      {% for l in by_line %}
+        <tr><td><b>{{ l.line }}</b></td><td>{{ l.sessions }}</td>
+          <td>{{ "{:,}".format(l.beans) }}</td><td>{{ l.avg_defect_rate }}%</td>
+          <td><span class="badge" style="background:rgba(16,185,129,.14);color:#10b981">{{ l.premium_pct }}%</span></td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="card">
+    <div class="section-title"><span class="dot"></span>Sesi Grading Terbaru</div>
+    <table>
+      <thead><tr><th>Waktu</th><th>Sumber</th><th>Mutu</th><th>Cacat/300g</th></tr></thead>
+      <tbody>
+      {% for r in recent %}
+        <tr><td class="muted">{{ r.ts[5:16].replace('T',' ') }}</td>
+          <td>{{ r.source }}{% if r.simulated %} <span class="muted">(sim)</span>{% endif %}</td>
+          <td><span class="badge" style="background: {{ grade_colors.get(r.grade_code,'#888') }}22; color: {{ grade_colors.get(r.grade_code,'#888') }}">{{ r.grade_code }}</span></td>
+          <td>{{ r.defect_value_300g|round(1) }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    <form action="{{ url_for('reseed') }}" method="post" style="margin-top:14px">
+      <button class="btn ghost" type="submit">↻ Regenerasi data simulasi</button>
+    </form>
+  </div>
+</div>
+
+{% endif %}
+{% endblock %}
