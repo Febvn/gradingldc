@@ -49,3 +49,5 @@ python main.py
 - **Grade A**: Biji utuh, warna seragam, tidak ada cacat
 - **Grade B**: Biji utuh, sedikit variasi warna
 - **Grade C**: Biji pecah, warna tidak seragam, ada cacat
+
+abc
