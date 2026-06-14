@@ -32,3 +32,11 @@ flask>=3.0
 # Otomatis menarik torch (CPU). Berukuran besar (~ratusan MB). Hanya diperlukan
 # untuk menjalankan yolo_poc/ (make_yolo_dataset.py, train_yolo.py).
 ultralytics>=8.3
+
+# --- Desktop Application ---
+flaskwebgui>=1.1.2
+pyinstaller>=6.3.0
+
+# --- External Datasets (Kaggle & Roboflow) ---
+kaggle>=1.6.0
+roboflow>=1.1.0

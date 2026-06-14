@@ -73,5 +73,9 @@ Thumbs.db
 # YOLO PoC: dataset sintetis & artefak training (regenerable, besar)
 yolo_poc/dataset_clean/
 yolo_poc/dataset_hard/
+yolo_poc/dataset_real/
 yolo_poc/runs/
 *.pt
+
+# Raw datasets (terlalu besar untuk git)
+data_raw/

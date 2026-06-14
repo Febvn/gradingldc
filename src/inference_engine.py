@@ -31,6 +31,7 @@ if _SRC not in sys.path:
 
 from preprocessing import ImagePreprocessor
 from grading_standard import SNIGradeEngine
+from screen_size_grader import ScreenSizeGrader
 from config import Config
 
 # Warna BGR per kelas (selaras dengan grading_system / batch_inference).
@@ -57,6 +58,7 @@ class SmartGradingEngine:
             else Config.CONFIDENCE_THRESHOLD
         )
         self.awb_enabled = awb_enabled
+        self.screen_grader = ScreenSizeGrader(pixels_per_mm=10.0)
 
         # Warna per label.
         self.colors = {
@@ -125,19 +127,29 @@ class SmartGradingEngine:
                 else:
                     label = self.grade_labels[cls]
                 counts[label] += 1
+                
+                _, width_mm = self.screen_grader.get_physical_dimensions(b["contour"])
+                screen_size = self.screen_grader.determine_screen_size(width_mm)
+                
                 bean_results.append({
                     "bbox": [int(v) for v in b["bbox"]],
                     "label": label,
                     "confidence": round(conf, 4),
+                    "screen_size": screen_size,
                 })
         else:
             # Mode deteksi-saja (model belum ada): tandai semua "Uncertain".
             for b in valid:
                 counts["Uncertain"] += 1
+                
+                _, width_mm = self.screen_grader.get_physical_dimensions(b["contour"])
+                screen_size = self.screen_grader.determine_screen_size(width_mm)
+                
                 bean_results.append({
                     "bbox": [int(v) for v in b["bbox"]],
                     "label": "Uncertain",
                     "confidence": 0.0,
+                    "screen_size": screen_size,
                 })
         t_infer = (time.time() - t1) * 1000.0
 
@@ -182,7 +194,11 @@ class SmartGradingEngine:
             x, y, w, h = b["bbox"]
             color = self.colors.get(r["label"], (255, 255, 255))
             cv2.drawContours(out, [b["contour"]], -1, color, 2)
-            tag = r["label"] if r["label"] == "Uncertain" else f'{r["label"]} {r["confidence"]:.0%}'
+            
+            screen_size = r.get("screen_size", "")
+            base_label = r["label"] if r["label"] == "Uncertain" else f'{r["label"]} {r["confidence"]:.0%}'
+            tag = f"{base_label} ({screen_size})" if screen_size else base_label
+            
             cv2.putText(out, tag, (x, max(12, y - 5)),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1, cv2.LINE_AA)
 
