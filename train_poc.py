@@ -18,13 +18,71 @@ Jalankan:
     python train_poc.py --per-class 80   (lebih banyak data sintetis)
 """
 import os
-# WAJIB sebelum import tensorflow: pakai Keras 2 (tf-keras) agar kode model tim
-# (ImageDataGenerator, optimizer.lr, dsb.) kompatibel di TF 2.20 / Python 3.13.
 os.environ.setdefault("TF_USE_LEGACY_KERAS", "1")
 os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "2")
+os.environ.setdefault("PYTHONUTF8", "1")
 
 import sys
 import argparse
+
+
+def setup_hardware():
+    """
+    Auto-detect dan konfigurasi hardware terbaik yang tersedia.
+    Prioritas: NVIDIA (CUDA) > AMD/Intel (DirectML) > CPU
+    Mengembalikan: ('gpu'|'directml'|'cpu', batch_size_rekomendasi)
+    """
+    import tensorflow as tf
+
+    # --- Coba NVIDIA / CUDA GPU ---
+    gpus = tf.config.list_physical_devices('GPU')
+    if gpus:
+        for gpu in gpus:
+            try:
+                tf.config.experimental.set_memory_growth(gpu, True)
+            except RuntimeError:
+                pass
+        names = [g.name for g in gpus]
+        print(f"[GPU NVIDIA/CUDA] {len(gpus)} GPU ditemukan: {names}")
+        print("  -> Training akan menggunakan GPU (lebih cepat)")
+        return 'gpu', 32
+
+    # --- Coba AMD / Intel via DirectML (Windows) ---
+    try:
+        import tensorflow_directml_plugin  # noqa: F401
+        dml_gpus = tf.config.list_physical_devices('GPU')
+        if dml_gpus:
+            print(f"[GPU AMD/DirectML] {len(dml_gpus)} GPU ditemukan")
+            print("  -> Training akan menggunakan DirectML GPU")
+            return 'directml', 32
+    except ImportError:
+        pass
+
+    # --- Deteksi GPU AMD/NVIDIA tanpa driver CUDA terpasang ---
+    try:
+        import subprocess
+        result = subprocess.run(
+            ['wmic', 'path', 'win32_VideoController', 'get', 'name'],
+            capture_output=True, text=True, timeout=5
+        )
+        gpu_names = [l.strip() for l in result.stdout.splitlines() if l.strip() and 'Name' not in l]
+        if gpu_names:
+            has_amd = any('AMD' in n or 'Radeon' in n for n in gpu_names)
+            has_nvidia = any('NVIDIA' in n or 'GeForce' in n or 'RTX' in n or 'GTX' in n for n in gpu_names)
+            print(f"[INFO] GPU terdeteksi: {', '.join(gpu_names)}")
+            if has_nvidia:
+                print("  -> GPU NVIDIA terdeteksi tapi CUDA belum aktif.")
+                print("     Install CUDA Toolkit: https://developer.nvidia.com/cuda-downloads")
+            elif has_amd:
+                print("  -> GPU AMD terdeteksi. Untuk menggunakan GPU, jalankan:")
+                print("     pip install tensorflow-directml-plugin")
+                print("     lalu jalankan train_poc.py lagi.")
+    except Exception:
+        pass
+
+    # --- Fallback CPU ---
+    print("[CPU] Training menggunakan CPU (lebih lambat, normal tanpa GPU).")
+    return 'cpu', 16
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
 
@@ -39,8 +97,9 @@ def main():
     parser.add_argument("--p2-epochs", type=int, default=5, help="Epoch fase 2 (fine-tune)")
     args = parser.parse_args()
 
-    # --- Override Config agar pelatihan PoC cepat & deterministik ---
-    Config.MIXUP_ENABLED = False          # mixup memperlambat di CPU
+    # --- Deteksi hardware ---
+    hw, batch_size = setup_hardware()
+    Config.MIXUP_ENABLED = False
     Config.LR_SCHEDULE = "reduce_on_plateau"
 
     import numpy as np
@@ -55,9 +114,9 @@ def main():
     num_classes = Config.MODEL_NUM_CLASSES
 
     print("=" * 60)
-    print("PoC TRAINING — EfficientNetB0 (dataset sintetis)")
-    print(f"  kelas={num_classes}  per_class={args.per_class}  "
-          f"p1={args.p1_epochs}  p2={args.p2_epochs}")
+    print("PoC TRAINING — EfficientNetB3 (dataset real + sintetis)")
+    print(f"  hardware={hw}  batch={batch_size}  kelas={num_classes}")
+    print(f"  per_class={args.per_class}  p1={args.p1_epochs}  p2={args.p2_epochs}")
     print("=" * 60)
 
     # 1. Pastikan dataset sintetis tersedia.
@@ -83,7 +142,7 @@ def main():
     # 3. Fase 1: latih classifier head.
     model.train(
         X_train, y_train, X_val, y_val,
-        epochs=args.p1_epochs, batch_size=16,
+        epochs=args.p1_epochs, batch_size=batch_size,
         class_weights=class_weights, data_augmentation=aug,
     )
 
@@ -91,7 +150,7 @@ def main():
     if args.p2_epochs > 0:
         model.fine_tune(
             X_train, y_train, X_val, y_val,
-            epochs=args.p2_epochs, batch_size=16,
+            epochs=args.p2_epochs, batch_size=batch_size,
             n_layers_unfreeze=Config.TRAIN_P2_UNFREEZE_LAYERS,
             class_weights=class_weights, data_augmentation=aug,
         )

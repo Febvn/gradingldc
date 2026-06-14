@@ -142,7 +142,7 @@ def generate_synthetic_dataset(data_dir, num_samples_per_class=20):
             filename = f"sync_coffee_{i:03d}.jpg"
             cv2.imwrite(os.path.join(target_folder, filename), img)
             
-    print(f"✓ Berhasil menulis {num_samples_per_class * len(grade_labels)} gambar sintetis ke '{data_dir}/'")
+    print(f"[OK] Berhasil menulis {num_samples_per_class * len(grade_labels)} gambar sintetis ke '{data_dir}/'")
     print()
 
 
