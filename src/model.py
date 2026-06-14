@@ -18,6 +18,80 @@ try:
 except ImportError:
     Config = None
 
+_directml_patched = False
+
+def _patch_directml_ops():
+    """
+    Patch TF 2.10 ops that trigger DirectML OpKernel conflicts during model
+    construction. Three known conflicting op families:
+
+      Fill                       — triggered by layers.Normalization.build()
+      Sqrt                       — triggered by EfficientNet's Rescaling(1/sqrt(...))
+                                   (fixed directly in efficientnet.py, not here)
+      StatelessRandomGetKeyCounter — triggered by stateless weight initializers
+
+    The Normalization layer is replaced with a variable-free passthrough (safe
+    because EfficientNet never calls .adapt() on it, so it's mathematically
+    identical to identity). The stateless random functions are replaced with
+    their stateful equivalents which don't call StatelessRandomGetKeyCounter.
+    """
+    global _directml_patched
+    if _directml_patched:
+        return
+
+    # Only applicable on TF 2.10 + tensorflow-directml-plugin (venv_gpu).
+    # On TF 2.15+ (Python 3.13), keras.layers.serialization does not exist
+    # and DirectML is not installed — return early with no changes.
+    try:
+        from keras.layers import serialization as _ser
+        if not hasattr(_ser, 'LOCAL'):
+            _directml_patched = True
+            return
+    except (ImportError, AttributeError):
+        _directml_patched = True
+        return
+
+    # --- 1. Normalization patch (Fill conflict) ---
+    from tensorflow.keras import layers as _kl
+
+    class _SafeNorm(_kl.Layer):
+        def __init__(self, axis=None, mean=None, variance=None, **kwargs):
+            kwargs.pop('invert', None)
+            kwargs.pop('stddev', None)
+            super().__init__(**kwargs)
+        def call(self, inputs):
+            return tf.cast(inputs, tf.float32)
+        def get_config(self):
+            return super().get_config()
+        def adapt(self, *a, **kw):
+            pass
+
+    _kl.Normalization = _SafeNorm
+    keras.layers.Normalization = _SafeNorm
+    _ser.populate_deserializable_objects()
+    _ser.LOCAL.ALL_OBJECTS['Normalization'] = _SafeNorm
+
+    # --- 2. Stateless random patch (StatelessRandomGetKeyCounter conflict) ---
+    # Replace stateless random functions with stateful equivalents.
+    # Stateless versions require StatelessRandomGetKeyCounter on GPU, which
+    # has a duplicate kernel registration in tensorflow-directml-plugin.
+    _orig_stn = tf.random.stateless_truncated_normal
+    def _safe_stn(shape, seed, mean=0.0, stddev=1.0, dtype=tf.float32, **kw):
+        return tf.random.truncated_normal(shape=shape, mean=mean, stddev=stddev, dtype=dtype)
+    tf.random.stateless_truncated_normal = _safe_stn
+
+    _orig_su = tf.random.stateless_uniform
+    def _safe_su(shape, seed, minval=0, maxval=None, dtype=tf.float32, **kw):
+        return tf.random.uniform(shape=shape, minval=minval, maxval=maxval, dtype=dtype)
+    tf.random.stateless_uniform = _safe_su
+
+    _orig_sn = tf.random.stateless_normal
+    def _safe_sn(shape, seed, mean=0.0, stddev=1.0, dtype=tf.float32, **kw):
+        return tf.random.normal(shape=shape, mean=mean, stddev=stddev, dtype=dtype)
+    tf.random.stateless_normal = _safe_sn
+
+    _directml_patched = True
+
 
 class CosineWarmupDecayScheduler(keras.callbacks.Callback):
     """
@@ -161,17 +235,22 @@ class CoffeeGradingModel:
                     weights='imagenet', **preproc_kwargs)
                 model_name = "EfficientNetB0"
         except TypeError:
-            # TF versi lama tidak mendukung include_preprocessing
-            if version == 'b3':
-                base_model = keras.applications.EfficientNetB3(
-                    input_shape=self.input_shape, include_top=False,
-                    weights='imagenet')
-                model_name = "EfficientNetB3"
-            else:
-                base_model = keras.applications.EfficientNetB0(
-                    input_shape=self.input_shape, include_top=False,
-                    weights='imagenet')
-                model_name = "EfficientNetB0"
+            # TF 2.10 doesn't support include_preprocessing.
+            # Apply DirectML patches (numpy-based init) then build under /cpu:0
+            # so that all variable creation and AssignVariableOp stay on CPU.
+            # Training ops still use GPU automatically via TF device placement.
+            _patch_directml_ops()
+            with tf.device('/cpu:0'):
+                if version == 'b3':
+                    base_model = keras.applications.EfficientNetB3(
+                        input_shape=self.input_shape, include_top=False,
+                        weights='imagenet')
+                    model_name = "EfficientNetB3"
+                else:
+                    base_model = keras.applications.EfficientNetB0(
+                        input_shape=self.input_shape, include_top=False,
+                        weights='imagenet')
+                    model_name = "EfficientNetB0"
         
         # Phase 1: Freeze base model layers
         base_model.trainable = False

@@ -25,20 +25,57 @@ os.chdir(os.path.dirname(os.path.abspath(__file__)))
 sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 
 os.environ.setdefault("TF_USE_LEGACY_KERAS", "1")
-os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "2")
+os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
 os.environ.setdefault("PYTHONUTF8", "1")
+os.environ.setdefault("TF_ENABLE_ONEDNN_OPTS", "0")
 
 import sys
+import warnings
+import logging
+
+warnings.filterwarnings('ignore')
+logging.getLogger('tensorflow').setLevel(logging.ERROR)
+logging.getLogger('absl').setLevel(logging.ERROR)
+logging.getLogger('h5py').setLevel(logging.ERROR)
+
+try:
+    import absl.logging as _absl_log
+    _absl_log._warn_preinit_stderr = 0
+    _absl_log.set_verbosity(_absl_log.ERROR)
+except Exception:
+    pass
+
 import argparse
+
+
+def _directml_is_functional():
+    """
+    Test whether tensorflow-directml-plugin is usable (no duplicate kernels).
+    Version 0.4.0.dev registers conflicting GPU OpKernels for AssignVariableOp,
+    Fill, TruncatedNormal, etc., making tf.Variable creation fail entirely.
+    Returns True only if a test variable can be created without errors.
+    """
+    import tensorflow as tf
+    tf.get_logger().setLevel('ERROR')
+    try:
+        v = tf.Variable([1.0])
+        del v
+        return True
+    except tf.errors.InvalidArgumentError as e:
+        if 'Multiple OpKernel registrations' in str(e):
+            return False
+        raise
 
 
 def setup_hardware():
     """
     Auto-detect dan konfigurasi hardware terbaik yang tersedia.
-    Prioritas: NVIDIA (CUDA) > AMD/Intel (DirectML) > CPU
+    Prioritas: NVIDIA (CUDA) > AMD/Intel (DirectML, jika functional) > CPU
     Mengembalikan: ('gpu'|'directml'|'cpu', batch_size_rekomendasi)
     """
     import tensorflow as tf
+    tf.get_logger().setLevel('ERROR')
+    tf.autograph.set_verbosity(0)
 
     # --- Coba NVIDIA / CUDA GPU ---
     gpus = tf.config.list_physical_devices('GPU')
@@ -48,16 +85,25 @@ def setup_hardware():
                 tf.config.experimental.set_memory_growth(gpu, True)
             except RuntimeError:
                 pass
-        names = [g.name for g in gpus]
-        print(f"[GPU NVIDIA/CUDA] {len(gpus)} GPU ditemukan: {names}")
-        print("  -> Training akan menggunakan GPU (lebih cepat)")
-        return 'gpu', 32
+
+        # Verify GPU is actually usable (DirectML plugin may register conflicts)
+        if _directml_is_functional():
+            names = [g.name for g in gpus]
+            print(f"[GPU] {len(gpus)} GPU ditemukan: {names}")
+            print("  -> Training akan menggunakan GPU")
+            return 'gpu', 32
+        else:
+            print("[WARN] GPU terdeteksi tapi tensorflow-directml-plugin tidak kompatibel.")
+            print("  -> tensorflow-directml-plugin 0.4.0.dev memiliki bug: duplicate GPU")
+            print("     OpKernel registrations untuk AssignVariableOp/Fill/TruncatedNormal.")
+            print("  -> Untuk GPU AMD, gunakan PyTorch + torch-directml (bukan TF).")
+            print("  -> Melanjutkan training di CPU...")
 
     # --- Coba AMD / Intel via DirectML (Windows) ---
     try:
         import tensorflow_directml_plugin  # noqa: F401
         dml_gpus = tf.config.list_physical_devices('GPU')
-        if dml_gpus:
+        if dml_gpus and _directml_is_functional():
             print(f"[GPU AMD/DirectML] {len(dml_gpus)} GPU ditemukan")
             print("  -> Training akan menggunakan DirectML GPU")
             return 'directml', 32
@@ -73,21 +119,16 @@ def setup_hardware():
         )
         gpu_names = [l.strip() for l in result.stdout.splitlines() if l.strip() and 'Name' not in l]
         if gpu_names:
-            has_amd = any('AMD' in n or 'Radeon' in n for n in gpu_names)
             has_nvidia = any('NVIDIA' in n or 'GeForce' in n or 'RTX' in n or 'GTX' in n for n in gpu_names)
             print(f"[INFO] GPU terdeteksi: {', '.join(gpu_names)}")
             if has_nvidia:
                 print("  -> GPU NVIDIA terdeteksi tapi CUDA belum aktif.")
                 print("     Install CUDA Toolkit: https://developer.nvidia.com/cuda-downloads")
-            elif has_amd:
-                print("  -> GPU AMD terdeteksi. Untuk menggunakan GPU, jalankan:")
-                print("     pip install tensorflow-directml-plugin")
-                print("     lalu jalankan train_poc.py lagi.")
     except Exception:
         pass
 
     # --- Fallback CPU ---
-    print("[CPU] Training menggunakan CPU (lebih lambat, normal tanpa GPU).")
+    print("[CPU] Training menggunakan CPU.")
     return 'cpu', 16
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
@@ -164,7 +205,9 @@ def main():
     # 5. Simpan & evaluasi.
     model.save_model(Config.MODEL_SAVE_PATH)
     try:
-        evaluate_model(model, X_val, y_val, save_dir="models")
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore')
+            evaluate_model(model, X_val, y_val, save_dir="models")
     except Exception as e:
         print(f"(evaluasi dilewati: {e})")
 
