@@ -18,6 +18,12 @@ Jalankan:
     python train_poc.py --per-class 80   (lebih banyak data sintetis)
 """
 import os
+import sys
+
+# Pastikan working directory selalu di folder script ini
+os.chdir(os.path.dirname(os.path.abspath(__file__)))
+sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+
 os.environ.setdefault("TF_USE_LEGACY_KERAS", "1")
 os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "2")
 os.environ.setdefault("PYTHONUTF8", "1")
@@ -114,7 +120,7 @@ def main():
     num_classes = Config.MODEL_NUM_CLASSES
 
     print("=" * 60)
-    print("PoC TRAINING — EfficientNetB3 (dataset real + sintetis)")
+    print("PoC TRAINING - EfficientNetB3 (dataset real + sintetis)")
     print(f"  hardware={hw}  batch={batch_size}  kelas={num_classes}")
     print(f"  per_class={args.per_class}  p1={args.p1_epochs}  p2={args.p2_epochs}")
     print("=" * 60)

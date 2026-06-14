@@ -4,9 +4,14 @@ Karena biji hijau kemungkinan data-nya sedikit, script ini akan
 generate synthetic green bean images dengan color augmentation
 """
 import os
+import sys
 import cv2
 import numpy as np
 from pathlib import Path
+
+# Pastikan working directory selalu di folder script ini
+os.chdir(os.path.dirname(os.path.abspath(__file__)))
+sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 
 
 def simulate_green_bean(normal_image, green_intensity=0.3):
@@ -210,15 +215,23 @@ def main():
     print()
     
     # Opsi 2: Simulasi biji hijau dari biji normal
-    source_normal = "data/normal"
-    if os.path.exists(source_normal):
-        print("Simulasi biji hijau dari biji normal...")
+    # Cari source: data/normal, atau fallback ke folder Kaggle
+    source_normal = None
+    for candidate in ["data/normal", "data_raw/kaggle_17_defects/Normal"]:
+        if os.path.exists(candidate) and any(
+            Path(candidate).glob("*.jpg")
+        ):
+            source_normal = candidate
+            break
+
+    if source_normal:
+        print(f"Simulasi biji hijau dari '{source_normal}'...")
         augment_green_beans(
             source_dir=source_normal,
             output_dir="data/biji_hijau_simulated",
             num_variants=5
         )
-        
+
         print()
         print("Membuat sampel mixed green (setengah matang)...")
         create_mixed_green_samples(
@@ -227,8 +240,8 @@ def main():
             num_samples=30
         )
     else:
-        print(f"Folder {source_normal} tidak ditemukan")
-        print("Buat folder 'data/normal' dan letakkan sample biji kopi normal di sana")
+        print("Folder data/normal dan data_raw/kaggle_17_defects/Normal tidak ditemukan.")
+        print("Jalankan dulu: python download_real_datasets.py")
     
     print()
     print("=" * 60)

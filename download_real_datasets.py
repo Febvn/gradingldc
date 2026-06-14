@@ -2,6 +2,10 @@ import os
 import sys
 import shutil
 
+# Pastikan working directory selalu di folder script ini
+os.chdir(os.path.dirname(os.path.abspath(__file__)))
+sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+
 def setup_kaggle():
     print("\n" + "="*50)
     print(" 1. Setup Kaggle Dataset (Untuk Model EfficientNet)")
@@ -64,7 +68,7 @@ def setup_roboflow():
 
 def main():
     print("============================================================")
-    print("  Smart Grading Kopi — Real Datasets Downloader")
+    print("  Smart Grading Kopi - Real Datasets Downloader")
     print("============================================================")
     
     setup_kaggle()
