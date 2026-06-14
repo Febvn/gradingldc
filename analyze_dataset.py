@@ -48,20 +48,45 @@ except ImportError:
 
 def generate_synthetic_dataset(data_dir, num_samples_per_class=20):
     """
-    Menghasilkan dataset sintetis biji kopi untuk testing awal.
-    Membantu user agar bisa langsung menjalankan training/analisis secara mandiri.
+    Menghasilkan dataset sintetis HANYA jika data asli belum ada atau kurang dari threshold.
+    Jika data nyata sudah cukup, fungsi ini langsung return tanpa overwrite apapun.
     """
     grade_labels = Config.GRADE_LABELS if Config is not None else ['Normal', 'Biji Hitam', 'Biji Cokelat', 'Berlubang', 'Pecah', 'Berjamur']
     folder_names = [label.lower().replace(' ', '_') for label in grade_labels]
-    
+    supported = ('.jpg', '.jpeg', '.png', '.bmp', '.webp')
+
+    # Hitung gambar nyata yang sudah ada
+    existing_counts = {}
+    for folder, label in zip(folder_names, grade_labels):
+        folder_path = os.path.join(data_dir, folder)
+        if os.path.isdir(folder_path):
+            count = sum(
+                1 for f in os.listdir(folder_path)
+                if f.lower().endswith(supported)
+            )
+            existing_counts[label] = count
+        else:
+            existing_counts[label] = 0
+
+    total_existing = sum(existing_counts.values())
+
+    if total_existing >= len(grade_labels) * 10:
+        # Data nyata sudah cukup, tidak perlu generate sintetis
+        print(f"[OK] Dataset ditemukan: {total_existing} gambar nyata di '{data_dir}/'")
+        for label in grade_labels:
+            print(f"  {label}: {existing_counts[label]} gambar")
+        print()
+        return
+
+    # Data tidak ada atau sangat sedikit — generate sintetis
     print("=" * 60)
-    print(f"DATASET TIDAK DITEMUKAN / KOSONG")
-    print(f"Menghasilkan {num_samples_per_class} gambar sintetis per kelas di '{data_dir}' untuk simulasi...")
+    print("Dataset belum ada. Membuat gambar sintetis untuk PoC...")
+    print(f"Menghasilkan {num_samples_per_class} gambar sintetis per kelas di '{data_dir}'")
     print("=" * 60)
-    
+
     # Random seed untuk konsistensi
     np.random.seed(42)
-    
+
     for folder, label in zip(folder_names, grade_labels):
         target_folder = os.path.join(data_dir, folder)
         os.makedirs(target_folder, exist_ok=True)
