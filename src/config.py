@@ -12,8 +12,8 @@ class Config:
     # MODEL
     # =============================================
     MODEL_INPUT_SHAPE = (224, 224, 3)
-    MODEL_NUM_CLASSES = 7
-    GRADE_LABELS = ['Normal', 'Biji Hitam', 'Biji Cokelat', 'Biji Hijau', 'Berlubang', 'Pecah', 'Berjamur']
+    MODEL_NUM_CLASSES = 6
+    GRADE_LABELS = ['Normal', 'Biji Hitam', 'Biji Cokelat', 'Berlubang', 'Pecah', 'Berjamur']
     MODEL_SAVE_PATH = "models/coffee_grading_model.h5"
     MODEL_BEST_P1_PATH = "models/best_model_phase1.h5"
     MODEL_BEST_FT_PATH = "models/best_model_finetuned.h5"

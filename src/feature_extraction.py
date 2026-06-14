@@ -117,56 +117,6 @@ class FeatureExtractor:
             'lab_b_skew': calc_skewness(b_channel),
         }
     
-    def detect_green_bean_characteristics(self, image):
-        """
-        Deteksi karakteristik spesifik untuk biji kopi hijau/belum matang
-        
-        Biji kopi hijau memiliki ciri khas:
-        - Hue di range hijau-kuning (80-160 degrees)
-        - Saturation lebih tinggi dari biji normal
-        - Value/Brightness menengah
-        - LAB: a-channel cenderung negatif (hijau)
-        
-        Args:
-            image: Input image (BGR format)
-            
-        Returns:
-            dict: Green bean detection features
-        """
-        hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
-        lab = cv2.cvtColor(image, cv2.COLOR_BGR2LAB)
-        
-        # Hitung percentage pixel di range hijau (Hue 80-160)
-        h_channel = hsv[:, :, 0]
-        green_mask = ((h_channel >= 40) & (h_channel <= 80))  # OpenCV hue is 0-180
-        green_percentage = float(np.sum(green_mask) / green_mask.size)
-        
-        # Saturation tinggi pada area hijau
-        s_channel = hsv[:, :, 1]
-        green_saturation_mean = float(s_channel[green_mask].mean()) if np.sum(green_mask) > 0 else 0.0
-        
-        # LAB a-channel (negatif = hijau, positif = merah)
-        a_channel = lab[:, :, 1].astype(np.float32) - 128.0  # Convert to -128 to 127
-        green_a_percentage = float(np.sum(a_channel < -10) / a_channel.size)
-        
-        # Hitung range warna dominan
-        h_hist = cv2.calcHist([hsv], [0], None, [180], [0, 180]).flatten()
-        dominant_hue_bin = int(np.argmax(h_hist))
-        dominant_hue_deg = dominant_hue_bin * 2  # Convert to degrees
-        
-        # Green color ratio (BGR channels)
-        b, g, r = cv2.split(image.astype(np.float32))
-        green_ratio = float(np.mean(g / (r + b + 1e-6)))
-        
-        return {
-            'green_pixel_percentage': green_percentage,
-            'green_saturation_mean': green_saturation_mean,
-            'green_lab_a_percentage': green_a_percentage,
-            'dominant_hue_degrees': dominant_hue_deg,
-            'green_color_ratio': green_ratio,
-            'is_likely_green': float(green_percentage > 0.15 and green_a_percentage > 0.2)
-        }
-    
     def extract_shape_features(self, contour):
         """
         Ekstraksi fitur bentuk dari contour biji kopi
@@ -427,7 +377,6 @@ class FeatureExtractor:
         """
         color_features = self.extract_color_features(image)
         lab_features = self.extract_lab_color_features(image)
-        green_features = self.detect_green_bean_characteristics(image)
         shape_features = self.extract_shape_features(contour)
         texture_features = self.extract_texture_features(image)
         glcm_features = self.extract_glcm_features(image)
@@ -437,7 +386,6 @@ class FeatureExtractor:
         all_features = {
             **color_features,
             **lab_features,
-            **green_features,
             **shape_features,
             **texture_features,
             **glcm_features,

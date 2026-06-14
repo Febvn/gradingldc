@@ -44,7 +44,6 @@ data/
 ├── normal/        <- Biji kopi normal (tanpa cacat)
 ├── biji_hitam/    <- Biji hitam penuh/parsial
 ├── biji_cokelat/  <- Biji cokelat (over-fermentasi)
-├── biji_hijau/    <- Biji hijau/belum matang ⭐ NEW
 ├── berlubang/     <- Biji berlubang (serangga)
 ├── pecah/         <- Biji pecah/retak
 └── berjamur/      <- Biji berjamur
@@ -65,20 +64,6 @@ data/
 **Biji Cokelat**
 - Biji berwarna cokelat gelap akibat over-fermentasi
 - Tekstur lebih lunak dari normal
-
-**Biji Hijau (Belum Matang)** ⭐ **NEW - PENTING!**
-- Biji berwarna hijau, hijau-kuning, atau kehijauan
-- Belum matang sempurna saat panen
-- **Karakteristik:**
-  - Hue: 80-160° (HSV color space)
-  - Saturation tinggi (>100)
-  - LAB a-channel negatif (warna hijau)
-  - Tekstur halus, mengkilap
-- **Dampak jika tidak dipisahkan:**
-  - ❌ Rasa pahit dan asam yang tidak diinginkan
-  - ❌ Aroma tidak berkembang sempurna saat roasting
-  - ❌ Menurunkan kualitas dan harga jual batch kopi
-  - ❌ Menyebabkan kopi tidak lulus standar mutu
 
 **Berlubang**
 - Terdapat lubang yang disebabkan oleh serangan serangga (coffee berry borer)
@@ -101,18 +86,10 @@ data/
 4. Simpan ke folder sesuai grade
 
 **Tips Foto:**
-- Gunakan pencahayaan natural atau lampu putih (hindari lampu hijau/kuning!)
+- Gunakan pencahayaan natural atau lampu putih
 - Jarak camera konsisten (20-30 cm)
 - Background kontras dengan biji kopi
 - Minimal 100 foto per grade untuk hasil baik
-
-**⭐ Tips Khusus untuk Biji Hijau:**
-- Foto di berbagai kondisi lighting (indoor/outdoor)
-- Include berbagai tingkat "kehijauan":
-  - Hijau penuh (totally unripe)
-  - Setengah hijau (partially ripe)
-  - Hijau kekuningan (almost ripe)
-- Gunakan white balance yang akurat (jangan sampai biji normal kelihatan hijau)
 
 #### Opsi 2: Capture dari Camera
 Gunakan script test_camera.py:
@@ -121,28 +98,6 @@ python test_camera.py
 ```
 - Tekan 's' untuk save image
 - Pindahkan image ke folder grade yang sesuai
-
-#### Opsi 3: Augmentasi Data Biji Hijau ⭐ NEW
-Jika Anda kesulitan mendapat banyak sample biji hijau real:
-```bash
-python augment_green_beans.py
-```
-
-**Script ini akan:**
-1. **Augmentasi biji hijau existing** (rotasi, flip, brightness, noise)
-2. **Simulasi biji hijau dari biji normal** (hue shift, saturation boost)
-3. **Generate "mixed green" samples** (setengah matang)
-
-**Output folders:**
-- `data/biji_hijau_augmented/` - Review & copy yang bagus ke `data/biji_hijau/`
-- `data/biji_hijau_simulated/` - Synthetic green beans
-- `data/biji_hijau_mixed/` - Mixed samples (half-ripe)
-
-**⚠️ PENTING:**
-- Synthetic data adalah **SUPPLEMENT** saja, bukan pengganti!
-- Tetap usahakan kumpulkan data real sebanyak mungkin
-- Review hasil augmentasi, hapus yang tidak realistis
-- Copy yang bagus ke folder `data/biji_hijau/` untuk training
 
 ### Jumlah Data Recommended
 - **Minimum**: 50 images per kelas (300 total)
