@@ -146,6 +146,8 @@ code { background: var(--card-2); padding: 2px 7px; border-radius: 5px; font-siz
   .live-grid { grid-template-columns: 1fr; }
   .result-grid { grid-template-columns: 1fr; }
   .dashboard-content { grid-template-columns: 1fr; }
+  /* Scrollable tables — scroll when wider than card */
+  table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
 }
 @media (max-width: 680px) {
   .container { padding: 0 14px; }
@@ -153,7 +155,8 @@ code { background: var(--card-2); padding: 2px 7px; border-radius: 5px; font-siz
   .brand small { display: none; }
   .brand { font-size: .82rem; gap: 8px; white-space: nowrap; flex-shrink: 0; }
   .brand .logo { width: 28px; height: 28px; font-size: 15px; }
-  .nav-links { gap: 0; overflow-x: auto; flex-wrap: nowrap; }
+  .nav-links { gap: 0; overflow-x: auto; flex-wrap: nowrap; scrollbar-width: none; -ms-overflow-style: none; }
+  .nav-links::-webkit-scrollbar { display: none; }
   .nav-links a { padding: 7px 8px; font-size: .78rem; white-space: nowrap; }
   .page-head { padding: 22px 0 12px; }
   .page-head h1 { font-size: 1.5rem; }
@@ -163,6 +166,17 @@ code { background: var(--card-2); padding: 2px 7px; border-radius: 5px; font-siz
   th, td { padding: 9px 10px; font-size: .82rem; }
   .kpi .value { font-size: 1.6rem; }
 }
+@media (max-width: 520px) {
+  /* Sample cards — 2 columns on phones */
+  .samples { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+  .sample-card img { height: 100px; }
+  /* Upload section — stack vertically */
+  .upload-row { flex-direction: column; align-items: stretch; gap: 10px; }
+  .upload-row .btn { text-align: center; }
+}
 @media (max-width: 420px) {
   .nav-links a { padding: 6px 7px; font-size: .76rem; }
 }
+/* Minimum 44px touch target (Apple HIG) */
+.btn { min-height: 44px; }
+button { min-height: 44px; }
