@@ -32,8 +32,8 @@ class CosineWarmupDecayScheduler(keras.callbacks.Callback):
         self.verbose = verbose
 
     def on_epoch_begin(self, epoch, logs=None):
-        if not hasattr(self.model.optimizer, "lr"):
-            raise ValueError('Optimizer must have a "lr" attribute.')
+        if not hasattr(self.model.optimizer, "lr") and not hasattr(self.model.optimizer, "learning_rate"):
+            raise ValueError('Optimizer must have a "learning_rate" or "lr" attribute.')
         
         if epoch < self.warmup_epochs:
             # Linear warmup
@@ -43,7 +43,17 @@ class CosineWarmupDecayScheduler(keras.callbacks.Callback):
             progress = (epoch - self.warmup_epochs) / (self.total_epochs - self.warmup_epochs)
             lr = self.lr_min + 0.5 * (self.lr_max - self.lr_min) * (1.0 + math.cos(math.pi * progress))
             
-        keras.backend.set_value(self.model.optimizer.lr, lr)
+        if hasattr(self.model.optimizer, "learning_rate"):
+            try:
+                keras.backend.set_value(self.model.optimizer.learning_rate, lr)
+            except:
+                self.model.optimizer.learning_rate = lr
+        elif hasattr(self.model.optimizer, "lr"):
+            try:
+                keras.backend.set_value(self.model.optimizer.lr, lr)
+            except:
+                self.model.optimizer.lr = lr
+            
         if self.verbose > 0:
             print(f'\nEpoch {epoch+1}: CosineWarmupDecayScheduler setting learning rate to {lr:.3e}.')
 
@@ -117,28 +127,39 @@ class CoffeeGradingModel:
             backbone = Config.BACKBONE
             
         if use_pretrained:
-            if backbone == 'efficientnet':
-                self._build_efficientnet_model()
+            if backbone == 'efficientnet' or backbone == 'efficientnetb0':
+                self._build_efficientnet_model(version='b0')
+            elif backbone == 'efficientnetb3':
+                self._build_efficientnet_model(version='b3')
             elif backbone == 'mobilenet':
                 self._build_mobilenet_model()
             else:
-                self._build_efficientnet_model()
+                self._build_efficientnet_model(version='b0')
         else:
             self._build_custom_cnn_model()
         
         return self.model
     
-    def _build_efficientnet_model(self):
+    def _build_efficientnet_model(self, version='b0'):
         """
-        Build model dengan EfficientNetB0 sebagai backbone
-        EfficientNetB0 lebih akurat dari MobileNetV2 dengan parameter serupa
+        Build model dengan EfficientNet sebagai backbone
+        EfficientNetB3 lebih kuat dari B0 untuk dataset kompleks
         """
-        # Base model: EfficientNetB0
-        base_model = keras.applications.EfficientNetB0(
-            input_shape=self.input_shape,
-            include_top=False,
-            weights='imagenet'
-        )
+        # Base model: EfficientNet
+        if version == 'b3':
+            base_model = keras.applications.EfficientNetB3(
+                input_shape=self.input_shape,
+                include_top=False,
+                weights='imagenet'
+            )
+            model_name = "EfficientNetB3"
+        else:
+            base_model = keras.applications.EfficientNetB0(
+                input_shape=self.input_shape,
+                include_top=False,
+                weights='imagenet'
+            )
+            model_name = "EfficientNetB0"
         
         # Phase 1: Freeze base model layers
         base_model.trainable = False
@@ -187,7 +208,7 @@ class CoffeeGradingModel:
         
         self.model = model
         self._base_model = base_model
-        print("Model dengan Transfer Learning (EfficientNetB0) berhasil dibuat")
+        print(f"Model dengan Transfer Learning ({model_name}) berhasil dibuat")
         print(f"  Total params: {model.count_params():,}")
 
     def _build_mobilenet_model(self):
@@ -420,7 +441,7 @@ class CoffeeGradingModel:
                 epochs=epochs,
                 steps_per_epoch=len(X_train) // batch_size,
                 callbacks=callbacks,
-                class_weight=class_weights,
+                class_weight=None if mixup_enabled else class_weights,
                 verbose=1
             )
         else:
@@ -561,7 +582,7 @@ class CoffeeGradingModel:
                 epochs=epochs,
                 steps_per_epoch=len(X_train) // batch_size,
                 callbacks=callbacks,
-                class_weight=class_weights,
+                class_weight=None if mixup_enabled else class_weights,
                 verbose=1
             )
         else:

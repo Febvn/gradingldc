@@ -9,12 +9,17 @@ Sistem grading kopi realtime - Main system
 import cv2
 import numpy as np
 import time
+import os
+import csv
+from datetime import datetime
 import tensorflow as tf
 from collections import deque
 from camera_capture import CameraCapture
 from preprocessing import ImagePreprocessor
 from feature_extraction import FeatureExtractor
 from model import CoffeeGradingModel
+from scaa_calculator import SCAACalculator
+from screen_size_grader import ScreenSizeGrader
 
 try:
     from config import Config
@@ -167,6 +172,24 @@ class CoffeeGradingSystem:
         else:
             grade_labels = ['Grade A', 'Grade B', 'Grade C']
         
+        # SCAA Calculator
+        self.scaa_calculator = SCAACalculator()
+        self.show_scaa_mode = False
+        self.last_results = []
+        
+        # Screen Size Grader
+        self.screen_grader = ScreenSizeGrader(pixels_per_mm=10.0)
+        
+        # MLOps Data Flywheel & Reports Setup
+        self.reports_dir = "reports"
+        self.review_dir = "data/needs_review"
+        os.makedirs(self.reports_dir, exist_ok=True)
+        os.makedirs(self.review_dir, exist_ok=True)
+        
+        self.save_low_confidence = True
+        self.low_confidence_threshold = 0.55
+        self.saved_review_keys = set()
+        
         # UI controls
         self.show_gradcam = False
         
@@ -292,6 +315,10 @@ class CoffeeGradingSystem:
                         final_grade = 'Uncertain'
                     else:
                         final_grade = self.model.grade_labels[predicted_class]
+                        
+                    # Calculate Screen Size
+                    _, width_mm = self.screen_grader.get_physical_dimensions(contour)
+                    screen_size = self.screen_grader.determine_screen_size(width_mm)
                     
                     # Store result
                     results.append({
@@ -300,8 +327,18 @@ class CoffeeGradingSystem:
                         'confidence': smoothed_confidence,
                         'raw_confidence': confidence,
                         'probabilities': smoothed_probs,
-                        'raw_probabilities': probs
+                        'raw_probabilities': probs,
+                        'screen_size': screen_size
                     })
+                    
+                    # Data Flywheel: Auto-save low confidence images
+                    if self.save_low_confidence and smoothed_confidence < self.low_confidence_threshold and smoothed_confidence > 0.0:
+                        if smoother_key not in self.saved_review_keys:
+                            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+                            predicted_label_name = self.model.grade_labels[predicted_class]
+                            filename = os.path.join(self.review_dir, f"review_{predicted_label_name}_{timestamp}.jpg")
+                            cv2.imwrite(filename, roi)
+                            self.saved_review_keys.add(smoother_key)
                     
                     # Apply Grad-CAM overlay if enabled and toggled
                     if self.show_gradcam and self.gradcam_enabled:
@@ -316,7 +353,7 @@ class CoffeeGradingSystem:
                     
                     # Draw detection
                     self._draw_detection(annotated_frame, bbox, contour,
-                                        final_grade, smoothed_confidence, smoothed_probs)
+                                        final_grade, smoothed_confidence, smoothed_probs, screen_size)
         else:
             # Fallback to sequential inference if TTA is enabled (TTA logic is not batched yet)
             for bean in detected_beans:
@@ -350,6 +387,10 @@ class CoffeeGradingSystem:
                         final_grade = 'Uncertain'
                     else:
                         final_grade = self.model.grade_labels[predicted_class]
+                        
+                    # Calculate Screen Size
+                    _, width_mm = self.screen_grader.get_physical_dimensions(contour)
+                    screen_size = self.screen_grader.determine_screen_size(width_mm)
                     
                     # Store result
                     results.append({
@@ -358,8 +399,18 @@ class CoffeeGradingSystem:
                         'confidence': smoothed_confidence,
                         'raw_confidence': confidence,
                         'probabilities': smoothed_probs,
-                        'raw_probabilities': probs
+                        'raw_probabilities': probs,
+                        'screen_size': screen_size
                     })
+                    
+                    # Data Flywheel: Auto-save low confidence images
+                    if self.save_low_confidence and smoothed_confidence < self.low_confidence_threshold and smoothed_confidence > 0.0:
+                        if smoother_key not in self.saved_review_keys:
+                            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+                            predicted_label_name = self.model.grade_labels[predicted_class]
+                            filename = os.path.join(self.review_dir, f"review_{predicted_label_name}_{timestamp}.jpg")
+                            cv2.imwrite(filename, roi)
+                            self.saved_review_keys.add(smoother_key)
                     
                     # Apply Grad-CAM overlay if enabled and toggled
                     if self.show_gradcam and self.gradcam_enabled:
@@ -374,12 +425,17 @@ class CoffeeGradingSystem:
                     
                     # Draw detection
                     self._draw_detection(annotated_frame, bbox, contour,
-                                        final_grade, smoothed_confidence, smoothed_probs)
+                                        final_grade, smoothed_confidence, smoothed_probs, screen_size)
         
         t_inf = (time.time() - t_inf_start) * 1000.0  # ms
         
         # Cleanup old tracking entries
         self.smoother.cleanup(active_keys)
+        
+        # Cleanup data flywheel keys that are no longer active
+        keys_to_remove = [k for k in self.saved_review_keys if k not in active_keys]
+        for k in keys_to_remove:
+            self.saved_review_keys.remove(k)
         
         # Draw Quality Warning banner if issues found
         if not quality_ok and len(quality_issues) > 0:
@@ -399,10 +455,11 @@ class CoffeeGradingSystem:
             'inference': t_inf,
             'total': t_total
         }
+        self.last_results = results
         
         return annotated_frame, results
     
-    def _draw_detection(self, frame, bbox, contour, grade, confidence, probs):
+    def _draw_detection(self, frame, bbox, contour, grade, confidence, probs, screen_size=None):
         """
         Draw detection visualization pada frame
         
@@ -413,6 +470,7 @@ class CoffeeGradingSystem:
             grade: Predicted grade
             confidence: Confidence score
             probs: Probability array
+            screen_size: Screen size string
         """
         x, y, w, h = bbox
         color = self.grade_colors.get(grade, (255, 255, 255))
@@ -426,7 +484,10 @@ class CoffeeGradingSystem:
         cv2.addWeighted(overlay, 0.5, frame, 0.5, 0, frame)
         
         # Draw label background
-        label = f"{grade}"
+        if screen_size:
+            label = f"{grade} ({screen_size})"
+        else:
+            label = f"{grade}"
         conf_text = f"{confidence:.0%}"
         
         label_size, _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 2)
@@ -481,6 +542,41 @@ class CoffeeGradingSystem:
             if grade in self.stats:
                 self.stats[grade] += 1
                 self.stats['total'] += 1
+                
+    def _save_scaa_report(self):
+        """Menyimpan SCAA Batch Report ke CSV file untuk analytics LDC"""
+        if not hasattr(self, 'last_results') or len(self.last_results) == 0:
+            print("Tidak ada deteksi biji kopi untuk dilaporkan.")
+            return
+            
+        current_counts = {}
+        for r in self.last_results:
+            g = r['grade']
+            current_counts[g] = current_counts.get(g, 0) + 1
+            
+        full_defects = self.scaa_calculator.calculate_full_defects(current_counts)
+        scaa_grade = self.scaa_calculator.determine_grade(full_defects)
+        
+        filepath = os.path.join(self.reports_dir, "daily_grading_report.csv")
+        file_exists = os.path.isfile(filepath)
+        
+        try:
+            with open(filepath, mode='a', newline='') as f:
+                writer = csv.writer(f)
+                if not file_exists:
+                    # header
+                    headers = ['Timestamp', 'Total Beans', 'Full Defects', 'Final Grade'] + list(self.grade_descriptions.keys())
+                    writer.writerow(headers)
+                    
+                timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                row = [timestamp, len(self.last_results), round(full_defects, 2), scaa_grade]
+                for label in self.grade_descriptions.keys():
+                    row.append(current_counts.get(label, 0))
+                writer.writerow(row)
+                
+            print(f"✅ SCAA Report berhasil disimpan ke {filepath}")
+        except Exception as e:
+            print(f"❌ Gagal menyimpan SCAA Report: {e}")
     
     def draw_overlay(self, frame):
         """
@@ -610,6 +706,41 @@ class CoffeeGradingSystem:
         cv2.putText(frame, gpu_text, (panel_x1 + 15, status_y),
                     cv2.FONT_HERSHEY_SIMPLEX, status_font_scale, gpu_color, 1)
         
+        # SCAA Mode status
+        status_y += 20
+        scaa_text = f"SCAA Mode: {'ON' if self.show_scaa_mode else 'OFF'}"
+        scaa_color = (0, 255, 0) if self.show_scaa_mode else (150, 150, 150)
+        cv2.putText(frame, scaa_text, (panel_x1 + 15, status_y),
+                    cv2.FONT_HERSHEY_SIMPLEX, status_font_scale, scaa_color, 1)
+        
+        # === SCAA Score Panel ===
+        if self.show_scaa_mode and hasattr(self, 'last_results'):
+            # Hitung statistik frame saat ini
+            current_counts = {}
+            for r in self.last_results:
+                g = r['grade']
+                current_counts[g] = current_counts.get(g, 0) + 1
+            
+            full_defects = self.scaa_calculator.calculate_full_defects(current_counts)
+            scaa_grade = self.scaa_calculator.determine_grade(full_defects)
+            
+            scaa_w = 250
+            scaa_h = 100
+            scaa_x1 = 10
+            scaa_y1 = h - scaa_h - 50
+            
+            scaa_overlay = frame.copy()
+            cv2.rectangle(scaa_overlay, (scaa_x1, scaa_y1), (scaa_x1 + scaa_w, scaa_y1 + scaa_h), (0, 50, 0), -1)
+            cv2.rectangle(scaa_overlay, (scaa_x1, scaa_y1), (scaa_x1 + scaa_w, scaa_y1 + scaa_h), (0, 255, 0), 2)
+            frame = cv2.addWeighted(frame, 0.8, scaa_overlay, 0.2, 0)
+            
+            cv2.putText(frame, "SCAA BATCH EVALUATION", (scaa_x1 + 10, scaa_y1 + 25),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+            cv2.putText(frame, f"Full Defects : {full_defects:.1f}", (scaa_x1 + 10, scaa_y1 + 55),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
+            cv2.putText(frame, f"LDC Grade    : {scaa_grade}", (scaa_x1 + 10, scaa_y1 + 80),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
+        
         # === Instructions (bawah) ===
         overlay3 = frame.copy()
         cv2.rectangle(overlay3, (10, h - 40), (w - 10, h - 5), (0, 0, 0), -1)
@@ -636,6 +767,7 @@ class CoffeeGradingSystem:
         print("  g     : Toggle Grad-CAM overlays")
         print("  w     : Toggle Auto White Balance (AWB)")
         print("  c     : Toggle Image Quality Checker (QC)")
+        print("  b     : Toggle SCAA Batch Mode")
         print("=" * 50)
         
         self.start()
@@ -706,6 +838,12 @@ class CoffeeGradingSystem:
                 elif key == ord('c'):
                     self.quality_check_enabled = not self.quality_check_enabled
                     print(f"Quality Checker: {'ON' if self.quality_check_enabled else 'OFF'}")
+                elif key == ord('b'):
+                    if self.show_scaa_mode:
+                        # User mematikan mode Batch, maka simpan Report!
+                        self._save_scaa_report()
+                    self.show_scaa_mode = not self.show_scaa_mode
+                    print(f"SCAA Mode: {'ON' if self.show_scaa_mode else 'OFF'}")
         
         finally:
             self.stop()

@@ -11,15 +11,15 @@ class Config:
     # =============================================
     # MODEL
     # =============================================
-    MODEL_INPUT_SHAPE = (224, 224, 3)
+    MODEL_INPUT_SHAPE = (300, 300, 3)
     MODEL_NUM_CLASSES = 6
     GRADE_LABELS = ['Normal', 'Biji Hitam', 'Biji Cokelat', 'Berlubang', 'Pecah', 'Berjamur']
     MODEL_SAVE_PATH = "models/coffee_grading_model.h5"
     MODEL_BEST_P1_PATH = "models/best_model_phase1.h5"
     MODEL_BEST_FT_PATH = "models/best_model_finetuned.h5"
     
-    # Backbone: 'efficientnet' atau 'mobilenet' atau 'custom'
-    BACKBONE = 'efficientnet'
+    # Backbone: 'efficientnet' (B0), 'efficientnetb3', 'mobilenet', atau 'custom'
+    BACKBONE = 'efficientnetb3'
     
     # =============================================
     # TRAINING - PHASE 1 (Classifier Head)
@@ -59,11 +59,11 @@ class Config:
     # =============================================
     # DATA AUGMENTATION
     # =============================================
-    AUG_ROTATION_RANGE = 30
+    AUG_ROTATION_RANGE = 45
     AUG_WIDTH_SHIFT = 0.15
     AUG_HEIGHT_SHIFT = 0.15
     AUG_SHEAR_RANGE = 0.15
-    AUG_ZOOM_RANGE = 0.2
+    AUG_ZOOM_RANGE = 0.3
     AUG_HORIZONTAL_FLIP = True
     AUG_VERTICAL_FLIP = True
     AUG_BRIGHTNESS_RANGE = (0.7, 1.3)
@@ -71,7 +71,7 @@ class Config:
     
     # Mixup augmentation
     MIXUP_ENABLED = True
-    MIXUP_ALPHA = 0.2  # Beta distribution alpha parameter
+    MIXUP_ALPHA = 0.3  # Beta distribution alpha parameter
     
     # =============================================
     # DATA
@@ -84,7 +84,7 @@ class Config:
     # =============================================
     # PREPROCESSING / COMPUTER VISION
     # =============================================
-    TARGET_SIZE = (224, 224)
+    TARGET_SIZE = (300, 300)
     
     # CLAHE
     CLAHE_CLIP_LIMIT = 3.0
