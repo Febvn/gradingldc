@@ -1,11 +1,23 @@
-# Dependencies untuk Railway deployment (tanpa ultralytics/torch/desktop tools)
+# ================================================================
+# Smart Grading Kopi — Railway Deployment Requirements
+# TensorFlow diinclude (Railway support full container)
+# Tidak include: ultralytics/torch (terlalu besar ~2GB)
+# ================================================================
+
+# --- Web Framework ---
 flask>=3.0
-numpy>=1.24
-scikit-learn>=1.3
-scikit-image>=0.22
-pillow>=10.1
-matplotlib>=3.8
-seaborn>=0.13
+
+# --- Computer Vision ---
 opencv-python-headless>=4.8
+pillow>=10.1
+scikit-image>=0.22
+
+# --- Machine Learning & Deep Learning ---
+numpy>=1.24,<2.0
+scikit-learn>=1.3
 tensorflow>=2.15
 tf-keras>=2.16
+
+# --- Data Visualization ---
+matplotlib>=3.8
+seaborn>=0.13

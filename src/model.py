@@ -145,21 +145,33 @@ class CoffeeGradingModel:
         Build model dengan EfficientNet sebagai backbone
         EfficientNetB3 lebih kuat dari B0 untuk dataset kompleks
         """
-        # Base model: EfficientNet
-        if version == 'b3':
-            base_model = keras.applications.EfficientNetB3(
-                input_shape=self.input_shape,
-                include_top=False,
-                weights='imagenet'
-            )
-            model_name = "EfficientNetB3"
-        else:
-            base_model = keras.applications.EfficientNetB0(
-                input_shape=self.input_shape,
-                include_top=False,
-                weights='imagenet'
-            )
-            model_name = "EfficientNetB0"
+        # include_preprocessing=False: hindari konflik layers.Normalization
+        # dengan DirectML / GPU kernel pada TF 2.10. Input tetap di-normalize
+        # oleh preprocessing pipeline sebelum masuk model.
+        try:
+            preproc_kwargs = dict(include_preprocessing=False)
+            if version == 'b3':
+                base_model = keras.applications.EfficientNetB3(
+                    input_shape=self.input_shape, include_top=False,
+                    weights='imagenet', **preproc_kwargs)
+                model_name = "EfficientNetB3"
+            else:
+                base_model = keras.applications.EfficientNetB0(
+                    input_shape=self.input_shape, include_top=False,
+                    weights='imagenet', **preproc_kwargs)
+                model_name = "EfficientNetB0"
+        except TypeError:
+            # TF versi lama tidak mendukung include_preprocessing
+            if version == 'b3':
+                base_model = keras.applications.EfficientNetB3(
+                    input_shape=self.input_shape, include_top=False,
+                    weights='imagenet')
+                model_name = "EfficientNetB3"
+            else:
+                base_model = keras.applications.EfficientNetB0(
+                    input_shape=self.input_shape, include_top=False,
+                    weights='imagenet')
+                model_name = "EfficientNetB0"
         
         # Phase 1: Freeze base model layers
         base_model.trainable = False

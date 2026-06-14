@@ -1,0 +1,32 @@
+# ================================================================
+# Smart Grading Kopi — GPU Requirements (Python 3.10 + AMD/DirectML)
+# Untuk venv_gpu yang dibuat dengan C:\Python310\python.exe
+#
+# Setup:
+#   C:\Python310\python.exe -m venv venv_gpu
+#   venv_gpu\Scripts\pip install -r requirements-gpu.txt
+#
+# Training:
+#   train_gpu.bat  (atau langsung pakai venv_gpu\Scripts\python.exe)
+# ================================================================
+
+# --- Versi dipinning ketat untuk kompatibilitas TF 2.10 + DirectML ---
+numpy==1.23.5
+tensorflow==2.10.0
+tensorflow-directml-plugin  # GPU AMD/Intel/NVIDIA via DirectX 12
+
+# --- Computer Vision ---
+opencv-python-headless>=4.8
+pillow>=10.1
+scikit-image>=0.21
+
+# --- Machine Learning ---
+scikit-learn>=1.3
+
+# --- Data Visualization ---
+matplotlib>=3.8
+seaborn>=0.13
+
+# --- Dataset Download ---
+kaggle>=1.6.0
+roboflow>=1.1.0
