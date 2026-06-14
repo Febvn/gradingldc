@@ -1,0 +1,13 @@
+data/
+models/
+results/
+screenshots/
+data_store/
+*.h5
+*.pt
+*.pth
+*.pkl
+yolo_poc/
+__pycache__/
+*.pyc
+.git/

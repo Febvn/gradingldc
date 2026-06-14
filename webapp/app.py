@@ -38,7 +38,11 @@ import charts
 import make_samples
 
 SAMPLE_DIR = os.path.join(_HERE, "sample_images")
-DB_PATH = os.path.join(_ROOT, "data_store", "grading_sessions.db")
+# Vercel filesystem is read-only except /tmp; fall back to /tmp when running serverless.
+if os.environ.get("VERCEL") or not os.access(_ROOT, os.W_OK):
+    DB_PATH = "/tmp/grading_sessions.db"
+else:
+    DB_PATH = os.path.join(_ROOT, "data_store", "grading_sessions.db")
 
 app = Flask(__name__)
 app.secret_key = "smart-grading-poc-ldc"
@@ -57,6 +61,15 @@ CLASS_COLORS = {
 }
 
 _engine = None  # lazy: hindari memuat TensorFlow sampai benar-benar dibutuhkan.
+_demo_seeded = False
+
+
+@app.before_request
+def _ensure_demo():
+    global _demo_seeded
+    if not _demo_seeded:
+        _demo_seeded = True
+        ensure_demo_data()
 
 
 def get_engine():
@@ -123,8 +136,12 @@ def grade():
         return redirect(url_for("index"))
 
     line = request.form.get("line", "Demo")
-    engine = get_engine()
-    result = engine.analyze_image(img, draw=True)
+    try:
+        engine = get_engine()
+        result = engine.analyze_image(img, draw=True)
+    except Exception as e:
+        flash(f"Model ML tidak tersedia di environment ini: {e}")
+        return redirect(url_for("index"))
 
     # Catat sesi (kecuali bila model belum dilatih -> tetap dicatat sbg indikatif).
     try:
@@ -202,7 +219,10 @@ def api_grade():
     if img is None:
         return jsonify({"error": "gambar tidak valid"}), 400
     annotate = request.args.get("annotate") == "1"
-    res = get_engine().analyze_image(img, draw=annotate)
+    try:
+        res = get_engine().analyze_image(img, draw=annotate)
+    except Exception as e:
+        return jsonify({"error": f"Model tidak tersedia: {e}"}), 503
     if request.args.get("record") == "1":
         try:
             get_store().add_session(res["grade"], source="live-camera",
