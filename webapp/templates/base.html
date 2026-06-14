@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Smart Grading Kopi{% endblock %} — PoC LDC</title>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+  <nav class="nav">
+    <div class="container nav-inner">
+      <a href="{{ url_for('index') }}" class="brand">
+        <span class="logo">☕</span>
+        <span>Smart Grading Kopi
+          <small>SNI 01-2907-2008 · Computer Vision · PT LDC</small>
+        </span>
+      </a>
+      <div class="nav-links">
+        <a href="{{ url_for('index') }}" class="{{ 'active' if active=='grade' }}">Grading</a>
+        <a href="{{ url_for('live') }}" class="{{ 'active' if active=='live' }}">Live Scan</a>
+        <a href="{{ url_for('dashboard') }}" class="{{ 'active' if active=='dashboard' }}">Dashboard</a>
+        <a href="{{ url_for('about') }}" class="{{ 'active' if active=='about' }}">Tentang</a>
+      </div>
+    </div>
+  </nav>
+
+  <main class="container">
+    {% with messages = get_flashed_messages() %}
+      {% if messages %}{% for m in messages %}<div class="flash">{{ m }}</div>{% endfor %}{% endif %}
+    {% endwith %}
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer>
+    <div class="container">
+      <strong>Proof of Concept — Sistem Smart Grading &amp; Analisis Data Kopi.</strong>
+      Kerja Praktik di PT Louis Dreyfus Company (LDC) Indonesia · Teknik Informatika ITERA 2026.<br>
+      Tim: Anselmus Herpin Hasugian (123140020) · Adi Septriansyah (123140021) ·
+      Febrian Valentino Nugroho (123140034).
+      Standar mutu: SNI 01-2907-2008 (sistem nilai cacat / 300 g).
+    </div>
+  </footer>
+</body>
+</html>

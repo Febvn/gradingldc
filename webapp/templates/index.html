@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+{% block title %}Grading{% endblock %}
+{% block content %}
+
+<div class="page-head">
+  <h1>Smart <span class="accent">Grading</span> Biji Kopi</h1>
+  <p>Unggah foto sampel biji kopi atau pilih sampel lot di bawah. Sistem akan
+     mendeteksi tiap biji (Computer Vision), mengklasifikasikan cacat
+     (EfficientNet), lalu menghitung <b>mutu lot sesuai SNI 01-2907-2008</b>
+     berdasarkan sistem nilai cacat per 300 gram.</p>
+</div>
+
+<div class="section card">
+  <form action="{{ url_for('grade') }}" method="post" enctype="multipart/form-data" id="gradeForm">
+    <div class="section-title"><span class="dot"></span>Pilih sampel lot demo</div>
+    <div class="samples">
+      {% for s in samples %}
+      <div class="sample-card" onclick="submitSample('{{ s.file }}')">
+        <img src="{{ url_for('sample_image', fname=s.file) }}" alt="{{ s.title }}">
+        <div class="cap">{{ s.title }} <span class="go">Grade &rarr;</span></div>
+      </div>
+      {% endfor %}
+    </div>
+
+    <div class="upload-row">
+      <span class="muted">atau unggah gambar sendiri:</span>
+      <input type="file" name="image" accept="image/*">
+      <button class="btn" type="submit">Analisis &amp; Grade</button>
+      <input type="hidden" name="sample" id="sampleField">
+    </div>
+  </form>
+</div>
+
+{% if result %}
+<div class="section">
+  <div class="section-title"><span class="dot"></span>Hasil Grading — <span class="muted" style="font-weight:400">{{ source }}</span></div>
+
+  {% if not result.model_available %}
+  <div class="banner-warn">⚠️ Model EfficientNet belum dilatih — menjalankan mode deteksi saja
+     (klasifikasi tidak tersedia). Jalankan <code>python train_poc.py</code> lebih dulu.</div>
+  {% endif %}
+
+  <div class="result-grid">
+    <div class="result-img-wrap">
+      <img src="{{ result.annotated_image_b64 }}" alt="Hasil anotasi">
+      <div class="legend">
+        {% for label, col in class_colors.items() %}
+        <div class="item"><span class="sw" style="background: {{ col }}"></span>{{ label }}</div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div>
+      {% set g = result.grade %}
+      {% set gcol = grade_colors.get(g.grade_code, '#888') %}
+      <div class="grade-hero" style="background: linear-gradient(180deg, {{ gcol }}22, transparent);">
+        <div class="code" style="color: {{ gcol }}">{{ g.grade_code }}</div>
+        <div class="label">{{ g.grade_label }} · {{ g.total_beans }} biji terdeteksi</div>
+        <div class="dv">Nilai cacat / 300 g: <b style="color: {{ gcol }}">{{ g.defect_value_per_300g }}</b></div>
+        {% if g.export_premium_eligible %}
+          <span class="pill ok">Layak Ekspor Premium</span>
+        {% else %}
+          <span class="pill no">Mutu Komersial / Re-sortasi</span>
+        {% endif %}
+      </div>
+
+      <div class="card" style="margin-top:16px;">
+        <div class="section-title" style="font-size:.95rem;"><span class="dot"></span>Komposisi Biji</div>
+        {% set total = result.counts.values()|sum %}
+        {% for label, count in result.counts.items() %}
+          {% if count > 0 %}
+          <div class="bar-row">
+            <div class="top"><span>{{ label }}</span><span>{{ count }} ({{ (count/total*100)|round(1) }}%)</span></div>
+            <div class="bar-track">
+              <div class="bar-fill" style="width: {{ (count/total*100) }}%; background: {{ class_colors.get(label,'#888') }}"></div>
+            </div>
+          </div>
+          {% endif %}
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <div class="grid cols-2" style="margin-top:18px;">
+    <div class="card">
+      <div class="section-title" style="font-size:.95rem;"><span class="dot"></span>Rincian Nilai Cacat (SNI)</div>
+      <table>
+        <thead><tr><th>Jenis Cacat</th><th>Jumlah</th><th>Kontribusi Nilai Cacat</th></tr></thead>
+        <tbody>
+        {% if g.defect_value_breakdown %}
+          {% for label, val in g.defect_value_breakdown.items() %}
+          <tr><td>{{ label }}</td><td>{{ result.counts.get(label,0) }}</td><td>{{ val }}</td></tr>
+          {% endfor %}
+        {% else %}
+          <tr><td colspan="3" class="muted">Tidak ada cacat terdeteksi — biji bersih.</td></tr>
+        {% endif %}
+        </tbody>
+      </table>
+      <p style="margin-top:12px;font-size:.85rem;"><b>Rekomendasi:</b> {{ g.recommendation }}</p>
+    </div>
+
+    <div class="card">
+      <div class="section-title" style="font-size:.95rem;"><span class="dot"></span>Diagnostik</div>
+      <table>
+        <tr><td>Model klasifikasi</td><td>{{ result.model_status }}</td></tr>
+        <tr><td>Kualitas citra</td><td>
+          {% if result.quality_ok %}<span class="badge" style="background:rgba(16,185,129,.16);color:#10b981">Baik</span>
+          {% else %}<span class="badge" style="background:rgba(245,158,11,.16);color:#fbbf24">{{ result.quality.issues|join(', ') }}</span>{% endif %}
+        </td></tr>
+        <tr><td>Brightness / Sharpness / Contrast</td><td>{{ result.quality.brightness }} / {{ result.quality.sharpness }} / {{ result.quality.contrast }}</td></tr>
+        <tr><td>Biji cacat</td><td>{{ g.defect_beans }} dari {{ g.total_beans }} ({{ g.defect_rate_pct }}%)</td></tr>
+        <tr><td>Est. berat sampel</td><td>{{ g.estimated_sample_weight_g }} g</td></tr>
+        <tr><td>Waktu proses</td><td>deteksi {{ result.timing_ms.detect }} ms · klasifikasi {{ result.timing_ms.classify }} ms · total {{ result.timing_ms.total }} ms</td></tr>
+      </table>
+      {% if g.notes %}<ul class="notes">{% for n in g.notes %}<li>{{ n }}</li>{% endfor %}</ul>{% endif %}
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<script>
+function submitSample(file){
+  document.getElementById('sampleField').value = file;
+  document.getElementById('gradeForm').submit();
+}
+</script>
+{% endblock %}

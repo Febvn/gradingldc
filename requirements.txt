@@ -1,0 +1,34 @@
+# Smart Grading Kopi — dependencies
+# Kompatibel Python 3.11 – 3.13.
+#
+# Catatan penting (Python 3.12/3.13 + TensorFlow >= 2.16):
+#   TensorFlow >= 2.16 memaketkan Keras 3, sedangkan kode model tim menargetkan
+#   Keras 2 (ImageDataGenerator, optimizer.lr, dll). Karena itu dipakai tf-keras
+#   (Keras 2) dengan environment variable:
+#
+#       Windows (PowerShell):  $env:TF_USE_LEGACY_KERAS = "1"
+#       Linux/Mac:             export TF_USE_LEGACY_KERAS=1
+#
+#   Semua entrypoint PoC (train_poc.py, poc_demo.py, webapp/app.py) sudah
+#   menyetel variabel ini secara otomatis.
+
+# --- Computer Vision & Machine Learning inti ---
+opencv-python>=4.8
+numpy>=1.24
+scikit-learn>=1.3
+scikit-image>=0.22
+pillow>=10.1
+matplotlib>=3.8
+seaborn>=0.13
+
+# --- Deep Learning (EfficientNet) ---
+tensorflow>=2.15
+tf-keras>=2.16        # hanya dibutuhkan bila TensorFlow >= 2.16 (Keras 3)
+
+# --- Web dashboard (Proof of Concept) ---
+flask>=3.0
+
+# --- Object Detection PoC (YOLOv8) ---
+# Otomatis menarik torch (CPU). Berukuran besar (~ratusan MB). Hanya diperlukan
+# untuk menjalankan yolo_poc/ (make_yolo_dataset.py, train_yolo.py).
+ultralytics>=8.3

@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block title %}Tentang PoC{% endblock %}
+{% block content %}
+
+<div class="page-head">
+  <h1>Tentang <span class="accent">Proof of Concept</span></h1>
+  <p>Bukti konsep sistem <b>Smart Grading &amp; Analisis Data Kopi</b> yang diusulkan
+     pada proposal Kerja Praktik di PT Louis Dreyfus Company (LDC) Indonesia.</p>
+</div>
+
+<div class="section grid cols-2">
+  <div class="card">
+    <div class="section-title"><span class="dot"></span>Alur Sistem (End-to-End)</div>
+    <ol class="steps">
+      <li><b>Akuisisi citra</b> — foto sampel biji kopi (atau frame kamera).</li>
+      <li><b>Pra-pemrosesan</b> — Auto White Balance, CLAHE, cek kualitas citra.</li>
+      <li><b>Deteksi biji</b> — segmentasi kontur + NMS (OpenCV).</li>
+      <li><b>Klasifikasi cacat</b> — EfficientNetB0 (6 kelas SNI/SCAA) per biji.</li>
+      <li><b>Penilaian mutu</b> — agregasi → nilai cacat/300 g → <b>Mutu 1–6 (SNI 01-2907-2008)</b>.</li>
+      <li><b>Analitik</b> — sesi dicatat → KPI &amp; tren operasional di dashboard.</li>
+    </ol>
+  </div>
+  <div class="card">
+    <div class="section-title"><span class="dot"></span>Pemetaan ke Proposal</div>
+    <table>
+      <thead><tr><th>Amanat Proposal</th><th>Realisasi PoC</th></tr></thead>
+      <tbody>
+        <tr><td>Smart Grading berbasis Computer Vision &amp; AI</td><td>Pipeline deteksi + EfficientNet</td></tr>
+        <tr><td>Meminimalkan subjektivitas manual</td><td>Grading otomatis & konsisten (SNI)</td></tr>
+        <tr><td>Analisis data operasional</td><td>Dashboard KPI, tren, Pareto, per-lini</td></tr>
+        <tr><td>Dashboard intuitif untuk staf lapangan</td><td>Aplikasi web ini</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="section grid cols-2">
+  <div class="card">
+    <div class="section-title"><span class="dot"></span>Kontribusi Komponen</div>
+    <p class="muted" style="font-size:.86rem;margin-bottom:10px;">PoC ini <b>melengkapi</b> (bukan menggantikan) pipeline visi komputer yang dibangun tim.</p>
+    <table>
+      <thead><tr><th>Komponen</th><th>Status</th></tr></thead>
+      <tbody>
+        <tr><td>Deteksi biji, fitur, EfficientNet, training (CV core)</td><td><span class="badge" style="background:rgba(16,185,129,.14);color:#10b981">Tim (Febrian)</span></td></tr>
+        <tr><td>Mesin grading mutu SNI 01-2907-2008</td><td><span class="badge" style="background:rgba(217,119,6,.16);color:#fbbf24">Baru</span></td></tr>
+        <tr><td>Engine inferensi terpadu (detect→classify→grade)</td><td><span class="badge" style="background:rgba(217,119,6,.16);color:#fbbf24">Baru</span></td></tr>
+        <tr><td>Modul analitik operasional + basis data</td><td><span class="badge" style="background:rgba(217,119,6,.16);color:#fbbf24">Baru</span></td></tr>
+        <tr><td>Web dashboard (aplikasi ini)</td><td><span class="badge" style="background:rgba(217,119,6,.16);color:#fbbf24">Baru</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="card">
+    <div class="section-title"><span class="dot"></span>Standar Mutu SNI 01-2907-2008</div>
+    <p class="muted" style="font-size:.86rem;">Mutu ditentukan dari jumlah <b>nilai cacat</b> pada contoh 300 g:</p>
+    <table>
+      <tbody>
+        <tr><td>Mutu 1</td><td>maks. 11</td></tr>
+        <tr><td>Mutu 2</td><td>12 – 25</td></tr>
+        <tr><td>Mutu 3</td><td>26 – 44</td></tr>
+        <tr><td>Mutu 4a / 4b</td><td>45 – 60 / 61 – 80</td></tr>
+        <tr><td>Mutu 5 / 6</td><td>81 – 150 / 151 – 225</td></tr>
+      </tbody>
+    </table>
+    <p class="muted" style="font-size:.78rem;margin-top:10px;">Contoh bobot: biji hitam = 1; biji cokelat = ¼;
+       biji pecah = ⅕; berlubang = ⅕; berjamur = 1⁄10.</p>
+  </div>
+</div>
+
+<div class="section card">
+  <div class="section-title"><span class="dot"></span>Catatan PoC</div>
+  <p class="muted" style="font-size:.88rem;">
+    Untuk demonstrasi, model dilatih pada <b>dataset sintetis</b> dan data dashboard
+    sebagian merupakan <b>simulasi</b> (ditandai <i>sim</i>) — karena dataset citra biji
+    kopi asli dan data operasional LDC akan diperoleh saat pelaksanaan Kerja Praktik di
+    lapangan. Arsitektur, standar mutu, dan alur sistem telah final dan siap dialihkan
+    ke data nyata tanpa perubahan kode.</p>
+</div>
+{% endblock %}
