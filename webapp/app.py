@@ -254,16 +254,18 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser(description="Smart Grading Kopi — Web Dashboard")
     ap.add_argument("--host", default=None,
                     help="Host bind (default: 127.0.0.1; otomatis 0.0.0.0 bila --https)")
-    ap.add_argument("--port", type=int, default=5000)
+    ap.add_argument("--port", type=int, default=int(os.environ.get("PORT", 5000)))
     ap.add_argument("--https", action="store_true",
                     help="Aktifkan HTTPS (WAJIB agar kamera HP bisa diakses via LAN)")
     args = ap.parse_args()
 
+    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     ensure_demo_data()
 
     ssl_context = None
     scheme = "http"
-    host = args.host or "127.0.0.1"
+    # Railway/cloud: default 0.0.0.0 bila PORT dari environment, lokal tetap 127.0.0.1
+    host = args.host or ("0.0.0.0" if os.environ.get("PORT") else "127.0.0.1")
     if args.https:
         scheme = "https"
         host = args.host or "0.0.0.0"  # agar bisa diakses dari HP di jaringan sama

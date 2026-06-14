@@ -1,0 +1,9 @@
+[build]
+builder = "nixpacks"
+buildCommand = "pip install -r requirements-railway.txt"
+
+[deploy]
+startCommand = "python webapp/app.py --host 0.0.0.0"
+healthcheckPath = "/"
+healthcheckTimeout = 60
+restartPolicyType = "on_failure"
